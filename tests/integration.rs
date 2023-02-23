@@ -117,14 +117,17 @@ mod ex03 {
     //         self as u64
     //     }
     // }
-    
+
+    // FIXME: This test currently fails because PathSegment is also used for expressions:
+
     type T = u64;
     
     #[typegen(T, i64, u32, i32, u16, i16, u8, i8)]
     impl ToU64 for T {
         /// Transforms the value into a `u64` type
         fn into_u64(self) -> u64 {
-            self as u64
+            const T: u64 = 0;
+            self as u64 + T
         }
     }
     
