@@ -43,7 +43,7 @@ mod ex01 {
         }
     }
 
-    // No occurrence, and usage of `Self` since an alias cannot be used as constructor:
+    // Usage of `Self(value)` since an alias cannot be used as constructor:
     #[typegen(T, Foot, Mile)]
     impl Default for T {
         fn default() -> Self {
@@ -188,5 +188,35 @@ mod ex04 {
         assert_eq!(f.into_u64(), 10_u64);
         assert_eq!(g.into_u64(), 10_u64);
         assert_eq!(h.into_u64(), 10_u64);
+    }
+}
+
+mod ex05 {
+    use num::Num;
+    use typegen::typegen;
+
+    trait AddMod {
+        type Output;
+        fn add_mod(self, rhs: Self, modulo: Self) -> Self::Output;
+    }
+
+    type T = u64;
+
+    #[typegen(T, i64, u32, i32)]
+    impl AddMod for T {
+        type Output = T;
+
+        fn add_mod(self, rhs: Self, modulo: Self) -> Self::Output {
+            fn int_mod<T2: Num> (a: T2, m: T2) -> T2 {
+                a % m
+            }
+            int_mod(self + rhs, modulo)
+        }
+    }
+
+    #[test]
+    fn test() {
+        assert_eq!(5_u32.add_mod(10, 8), 7);
+        assert_eq!(5_u64.add_mod(10, 8), 7);
     }
 }

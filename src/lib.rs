@@ -149,14 +149,25 @@
 //! as the type that must be substituted. This, for instance, fails to compile:
 //!
 //! ```compile_fail,rust
-//! # use typegen::typegen;
+//! use num::Num;
+//! use typegen::typegen;
+//!
+//! trait AddMod {
+//!     type Output;
+//!     fn add_mod(self, rhs: Self, modulo: Self) -> Self::Output;
+//! }
+//!
+//! type T = u64;
+//!
 //! #[typegen(T, i64, u32, i32)]
 //! impl AddMod for T {
 //!     type Output = T;
 //!
-//!     fn add_mod(self, rhs: Self) -> Self::Output {
-//!         fn fast_mod<T: Num> (a: T, b: T) { // ... }   // <== ERROR, conflicting 'T'
-//!         // ...
+//!     fn add_mod(self, rhs: Self, modulo: Self) -> Self::Output {
+//!         fn int_mod<T: Num> (a: T, m: T) -> T { // <== ERROR, conflicting 'T'
+//!             a % m
+//!         }
+//!         int_mod(self + rhs, modulo)
 //!     }
 //! }
 //! ```
