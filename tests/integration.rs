@@ -1,7 +1,4 @@
-#![allow(unused_imports)]
-#![allow(unused_variables)]
-
-use std::ops::{Add, Neg};
+use std::ops::Add;
 use typegen::typegen;
 
 #[derive(Clone, Copy)]

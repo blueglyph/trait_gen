@@ -1,12 +1,9 @@
-// #![allow(unused_imports)]
-// #![allow(unused_variables)]
-
 use proc_macro_error::proc_macro_error;
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use proc_macro_error::abort;
 
-use syn::{ItemImpl, PathSegment, Generics, parse_quote, GenericParam, Token};
+use syn::{ItemImpl, PathSegment, Generics, parse_quote, GenericParam, Token, parse_macro_input};
 use quote::quote;
 use syn::fold::Fold;
 use syn::parse::{Parse, ParseStream};
@@ -108,19 +105,8 @@ impl Parse for Types {
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn typegen(args: TokenStream, item: TokenStream) -> TokenStream {
-    let input = match ::syn::parse_macro_input::parse::<ItemImpl>(item) {
-        ::syn::__private::Ok(data) => data,
-        ::syn::__private::Err(err) => {
-            return ::syn::__private::TokenStream::from(err.to_compile_error());
-        }
-    };
-    let mut types = match ::syn::parse::<Types>(args) {
-        ::syn::__private::Ok(data) => data,
-        ::syn::__private::Err(err) => {
-            return ::syn::__private::TokenStream::from(err.to_compile_error());
-        }
-    };
-    println!("types = {:?}", types);
+    let input = parse_macro_input!(item as ItemImpl);
+    let mut types = parse_macro_input!(args as Types);
 
     let modified = types.fold_item_impl(input);
     TokenStream::from(quote!(#modified))
