@@ -13,8 +13,8 @@ pub struct Foot(f64);
 /// Distance in miles
 pub struct Mile(f64);
 
-type T = Foot;
-#[typegen(T, Meter, Mile)]
+type T = Meter;
+#[typegen(T, Foot, Mile)]
 impl Add for T {
     type Output = T;
 
@@ -40,7 +40,7 @@ impl Add for T {
 }
 
 #[test]
-fn test_substitution() {
+fn test_original_type() {
     let a = Meter(1.0);
     let b = Meter(2.0);
 
@@ -48,19 +48,17 @@ fn test_substitution() {
     assert_eq!(c.0, 3.0);
 }
 
-// Not yet implemented, the initial type is simply substituted by the first type of the list:
-//
-// #[test]
-// fn test_multiple_types() {
-//     let fa = Foot(1.0);
-//     let fb = Foot(2.0);
-//
-//     let fc = fa + fb;
-//     assert_eq!(fc.0, 3.0);
-//
-//     let ma = Mile(1.0);
-//     let mb = Mile(2.0);
-//
-//     let mc = ma + mb;
-//     assert_eq!(mc.0, 3.0);
-// }
+#[test]
+fn test_generated_types() {
+    let fa = Foot(1.0);
+    let fb = Foot(2.0);
+
+    let fc = fa + fb;
+    assert_eq!(fc.0, 3.0);
+
+    let ma = Mile(1.0);
+    let mb = Mile(2.0);
+
+    let mc = ma + mb;
+    assert_eq!(mc.0, 3.0);
+}

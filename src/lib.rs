@@ -108,8 +108,29 @@ pub fn typegen(args: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemImpl);
     let mut types = parse_macro_input!(args as Types);
 
-    let modified = types.fold_item_impl(input);
-    TokenStream::from(quote!(#modified))
+    // Only first changed:
+    // ------------------------------------------------------------------
+    // let modified = types.fold_item_impl(input);
+    // TokenStream::from(quote!(#modified))
+
+    // No change:
+    // ------------------------------------------------------------------
+    // TokenStream::from(quote!(#input))
+
+    // All changed:
+    // ------------------------------------------------------------------
+    // let mut output = TokenStream::from(quote!(input.clone()));
+    let mut output = TokenStream::new();
+    while !types.new_types.is_empty() {
+        println!("implementing {}", types.new_types.first().unwrap());
+        let modified = types.fold_item_impl(input.clone());
+        output.extend(TokenStream::from(quote!(#modified)));
+        types.new_types.remove(0);
+    }
+
+    println!("implementing {}", types.current_type);
+    output.extend(TokenStream::from(quote!(#input)));
+    output
 
     // Tests that more implementations can be added to output:
     // ------------------------------------------------------
