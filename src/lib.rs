@@ -208,10 +208,8 @@ impl Fold for Types {
         for t in i.params.iter() {
             match &t {
                 GenericParam::Type(t) => {
-                    println!("Generics - Type {}", t.ident);
                     if t.ident == self.current_type {
                         let col_start: proc_macro::Span = t.span().unwrap();
-                        println!("col_start: {:?}", col_start);
                         abort!(t.span(),
                             "Type '{}' is reserved for the substitution.", self.current_type.to_string();
                             help = "Use another identifier for this local generic type."
