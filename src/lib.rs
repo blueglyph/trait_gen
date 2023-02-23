@@ -360,3 +360,79 @@ pub fn typegen(args: TokenStream, item: TokenStream) -> TokenStream {
     output.extend(TokenStream::from(quote!(#input)));
     output
 }
+
+//==================================================================================================
+
+use syn::visit_mut::{self, VisitMut};
+use syn::{Expr, File, Lit, LitInt, TypePath, Path};
+
+impl VisitMut for Types {
+    fn visit_type_path_mut(&mut self, i: &mut TypePath) {
+        let TypePath { path, .. } = i;
+        for mut s in path.segments.iter_mut() {
+            let ident: &mut Ident = &mut (s.ident);
+            if ident == &self.current_type {
+                s.ident = self.new_types.first().unwrap().clone();
+            }
+        }
+    }
+}
+
+#[proc_macro_attribute]
+pub fn typegen2(args: TokenStream, item: TokenStream) -> TokenStream {
+    // let input = parse_macro_input!(item as ItemImpl);
+    let ast: File = syn::parse(item).unwrap();
+    let mut types = parse_macro_input!(args as Types);
+    let mut output = TokenStream::new();
+    while !types.new_types.is_empty() {
+        let mut modified_ast = ast.clone();
+        types.visit_file_mut(&mut modified_ast);
+        output.extend(TokenStream::from(quote!(#modified_ast)));
+        types.new_types.remove(0);
+    }
+    output.extend(TokenStream::from(quote!(#ast)));
+    output
+}
+
+mod visit_example {
+    use quote::quote;
+    use syn::visit_mut::{self, VisitMut};
+    use syn::{parse_quote, Expr, File, Lit, LitInt};
+
+    struct BigintReplace;
+
+    impl VisitMut for BigintReplace {
+        fn visit_expr_mut(&mut self, node: &mut Expr) {
+            if let Expr::Lit(expr) = &node {
+                if let Lit::Int(int) = &expr.lit {
+                    if int.suffix() == "u256" {
+                        let digits = int.base10_digits();
+                        let unsuffixed: LitInt = syn::parse_str(digits).unwrap();
+                        *node = parse_quote!(bigint::u256!(#unsuffixed));
+                        return;
+                    }
+                }
+            }
+
+            // Delegate to the default impl to visit nested expressions.
+            visit_mut::visit_expr_mut(self, node);
+        }
+    }
+
+    fn main() {
+        let code = quote! {
+            fn main() {
+                let _ = 999u256;
+            }
+        };
+
+        let mut syntax_tree: File = syn::parse2(code).unwrap();
+        BigintReplace.visit_file_mut(&mut syntax_tree);
+        println!("{}", quote!(#syntax_tree));
+    }
+
+    #[test]
+    fn test() {
+        main();
+    }
+}

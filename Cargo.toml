@@ -12,7 +12,7 @@ proc-macro = true
 [dependencies]
 quote = "1.0.23"
 proc-macro2 = "1.0.51"
-syn = { version = "1.0.107", features = ["full", "fold", "derive"] }
+syn = { version = "1.0.107", features = ["full", "fold", "visit-mut", "derive"] }
 proc-macro-error = "1"
 
 [dev-dependencies]

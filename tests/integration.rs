@@ -103,7 +103,8 @@ mod ex02 {
 }
 
 mod ex03 {
-    use typegen::typegen;
+    use num::Num;
+    use typegen::typegen2;
 
     pub trait ToU64 {
         fn into_u64(self) -> u64;
@@ -118,14 +119,14 @@ mod ex03 {
     //     }
     // }
 
-    // FIXME: This test currently fails because PathSegment is also used for expressions:
-
     type T = u64;
     
-    #[typegen(T, i64, u32, i32, u16, i16, u8, i8)]
+    #[typegen2(T, i64, u32, i32, u16, i16, u8, i8)]
     impl ToU64 for T {
         /// Transforms the value into a `u64` type
         fn into_u64(self) -> u64 {
+            // TODO: detect this and produce an error:
+            // fn dummy<T: Num + std::fmt::Display>(x: T) { println!("{x}"); }
             const T: u64 = 0;
             self as u64 + T
         }
