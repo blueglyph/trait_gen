@@ -44,13 +44,14 @@
 //! impl_into_u64! { u64 i64 u32 i32 u16 i16 u8 i8 }
 //! ```
 //!
-//! The advantage of the first method is the clarity of the native code, the support of
+//! The advantages of the first method are the clarity of the native code, the support of
 //! refactoring tools, code awareness, and not having to convert the code to the declarative
-//! macro syntax.
+//! macro syntax. Looking for the definition of an implementation method is much easier!
 //!
 //! The disadvantage is the lack of support for declarative macros with the IntelliJ plugin,
 //! although this is an ongoing work (see [tracking issue](https://github.com/intellij-rust/intellij-rust/issues/6908)).
-//! There are also a few limitations of the current version described in the [Limitations](#limitations) section.
+//! There are also a few limitations of the current version described in the [Limitations](#limitations)
+//! section.
 //!
 //! <br/>
 //!

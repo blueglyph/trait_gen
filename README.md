@@ -1,7 +1,7 @@
 # trait-gen
 
 [![crate](https://img.shields.io/crates/v/trait_gen.svg)](https://crates.io/crates/trait-gen)
-[![documentation](https://docs.rs/trait_gen/badge.svg)](https://docs.rs/trait-gen)
+[![documentation](https://docs.rs/trait-gen/badge.svg)](https://docs.rs/trait-gen)
 [![build status](https://github.com/blueglyph/trait_gen/actions/workflows/master.yml/badge.svg)](https://github.com/blueglyph/trait_gen/actions)
 [![crate](https://img.shields.io/crates/l/trait_gen.svg)](https://github.com/blueglyph/trait_gen/blob/master/LICENSE-MIT)
 
@@ -45,12 +45,14 @@ macro_rules! impl_into_u64 {
 impl_into_u64! { u64 i64 u32 i32 u16 i16 u8 i8 }
 ```
 
-The advantage of the first method is the clarity of the native code, the support of
+The advantages of the first method are the clarity of the native code, the support of
 refactoring tools, code awareness, and not having to convert the code to the declarative
-macro syntax.
+macro syntax. Looking for the definition of an implementation method is much easier!
 
 The disadvantage is the lack of support for declarative macros with the IntelliJ plugin,
-although this is an ongoing work (see [tracking issue](https://github.com/intellij-rust/intellij-rust/issues/6908)). There are also a few limitations of the current version described in the [Limitations](#limitations) section.
+although this is an ongoing work (see [tracking issue](https://github.com/intellij-rust/intellij-rust/issues/6908)).
+There are also a few limitations of the current version described in the [Limitations](#limitations)
+section.
 
 ## The trait_gen macro
 
