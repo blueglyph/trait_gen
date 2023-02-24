@@ -4,7 +4,7 @@
 
 mod ex01 {
     use std::ops::Add;
-    use typegen::typegen;
+    use trait_gen::trait_gen;
 
     #[derive(Clone, Copy)]
     /// Length in meter
@@ -20,7 +20,7 @@ mod ex01 {
 
     type T = Meter;
 
-    #[typegen(T, Foot, Mile)]
+    #[trait_gen(T, Foot, Mile)]
     impl Add for T {
         type Output = T;
 
@@ -48,7 +48,7 @@ mod ex01 {
     }
 
     // Usage of `Self(value)` since an alias cannot be used as constructor:
-    #[typegen(T, Foot, Mile)]
+    #[trait_gen(T, Foot, Mile)]
     impl Default for T {
         fn default() -> Self {
             Self(0.0)
@@ -81,14 +81,14 @@ mod ex01 {
 }
 
 mod ex02 {
-    use typegen::typegen;
+    use trait_gen::trait_gen;
 
     pub trait AddMod {
         fn add_mod(self, other: Self, m: Self) -> Self;
     }
 
     // No need to use `type T = u32` in such a simple case:
-    #[typegen(u32, i32, u64, i64, f32, f64)]
+    #[trait_gen(u32, i32, u64, i64, f32, f64)]
     impl AddMod for u32 {
         fn add_mod(self, other: Self, m: Self) -> Self {
             (self + other) % m
@@ -109,7 +109,7 @@ mod ex02 {
 struct T { pub offset: u64 }
 
 mod ex03 {
-    use typegen::typegen;
+    use trait_gen::trait_gen;
 
     pub trait ToU64 {
         fn into_u64(self) -> u64;
@@ -117,7 +117,7 @@ mod ex03 {
     
     // This doesn't work because the 'u64' return type of 'into_u64' would be substituted too:
     //
-    // #[typegen(u64, i64, u32, i32, u16, i16, u8, i8)]
+    // #[trait_gen(u64, i64, u32, i32, u16, i16, u8, i8)]
     // impl ToU64 for u64 {
     //     fn into_u64(self) -> u64 {
     //         self as u64
@@ -126,7 +126,7 @@ mod ex03 {
 
     type T = u64;
     
-    #[typegen(T, i64, u32, i32, u16, i16, u8, i8)]
+    #[trait_gen(T, i64, u32, i32, u16, i16, u8, i8)]
     impl ToU64 for T {
         /// Transforms the value into a `u64` type
         fn into_u64(self) -> u64 {

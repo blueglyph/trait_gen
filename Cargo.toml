@@ -1,18 +1,22 @@
 [package]
-name = "typegen"
-version = "0.0.0"
-authors = ["Redglyph <redglyph@gmail.com>"]
-description = "A `cargo generate` template for quick-starting a procedural macro crate"
-keywords = ["template", "proc_macro", "procmacro"]
+name = "trait-gen"
+description = "Trait implementation generator macro"
+version = "0.1.0"
 edition = "2021"
+authors = ["Redglyph"]
+categories = ["rust-patterns"]
+keywords = ["proc-macro", "macro", "trait", "generator"]
+homepage = "https://github.com/blueglyph/trait_gen"
+license = "MIT"
+repository = "https://github.com/blueglyph/trait_gen"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-quote = "1.0.23"
-proc-macro2 = "1.0.51"
-syn = { version = "1.0.107", features = ["full", "fold", "visit-mut", "derive"] }
+quote = "1"
+proc-macro2 = "1"
+syn = { version = "1", features = ["full", "visit-mut"] }
 proc-macro-error = "1"
 
 [dev-dependencies]
