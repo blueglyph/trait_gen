@@ -1,3 +1,7 @@
+// Copyright 2023 Redglyph
+//
+// Integration tests.
+
 mod ex01 {
     use std::ops::Add;
     use typegen::typegen;
@@ -102,14 +106,16 @@ mod ex02 {
     }
 }
 
+struct T { pub offset: u64 }
+
 mod ex03 {
-    use typegen::typegen2;
+    use typegen::typegen;
 
     pub trait ToU64 {
         fn into_u64(self) -> u64;
     }
     
-    // This will not work:
+    // This doesn't work because the 'u64' return type of 'into_u64' would be substituted too:
     //
     // #[typegen(u64, i64, u32, i32, u16, i16, u8, i8)]
     // impl ToU64 for u64 {
@@ -120,12 +126,18 @@ mod ex03 {
 
     type T = u64;
     
-    #[typegen2(T, i64, u32, i32, u16, i16, u8, i8)]
+    #[typegen(T, i64, u32, i32, u16, i16, u8, i8)]
     impl ToU64 for T {
         /// Transforms the value into a `u64` type
         fn into_u64(self) -> u64 {
+            // Type paths with a 'T' segment are fine, they won't be substituted:
+            let x: super::T = super::T { offset: 0 };
+
+            // Constant names with the same name as the substituted type are fine:
+            // (same for variable and functions, though they shouldn't have the same case)
             const T: u64 = 0;
-            self as u64 + T
+
+            self as u64 + T + x.offset
         }
     }
     
@@ -149,108 +161,4 @@ mod ex03 {
         assert_eq!(g.into_u64(), 10_u64);
         assert_eq!(h.into_u64(), 10_u64);
     }    
-}
-
-mod ex04 {
-    // This is the equivalent of ex03 when creating a custom declarative macro:
-
-    pub trait ToU64 {
-        fn into_u64(self) -> u64;
-    }
-
-    macro_rules! impl_to_u64 {
-        ($($t:ty)*) => (
-            $(impl ToU64 for $t {
-                fn into_u64(self) -> u64 {
-                    self as u64
-                }
-            })*
-        )
-    }
-
-    impl_to_u64! { u64 i64 u32 i32 u16 i16 u8 i8 }
-
-    #[test]
-    fn test() {
-        let a = 10_u64;
-        let b = 10_i64;
-        let c = 10_u32;
-        let d = 10_i32;
-        let e = 10_u16;
-        let f = 10_i16;
-        let g = 10_u8;
-        let h = 10_i8;
-
-        assert_eq!(a.into_u64(), 10_u64);
-        assert_eq!(b.into_u64(), 10_u64);
-        assert_eq!(c.into_u64(), 10_u64);
-        assert_eq!(d.into_u64(), 10_u64);
-        assert_eq!(e.into_u64(), 10_u64);
-        assert_eq!(f.into_u64(), 10_u64);
-        assert_eq!(g.into_u64(), 10_u64);
-        assert_eq!(h.into_u64(), 10_u64);
-    }
-}
-
-mod ex05 {
-    use num::Num;
-    use typegen::typegen;
-
-    trait AddMod {
-        type Output;
-        fn add_mod(self, rhs: Self, modulo: Self) -> Self::Output;
-    }
-
-    type T = u64;
-
-    #[typegen(T, i64, u32, i32)]
-    impl AddMod for T {
-        type Output = T;
-
-        fn add_mod(self, rhs: Self, modulo: Self) -> Self::Output {
-            fn int_mod<T2: Num> (a: T2, m: T2) -> T2 {
-                a % m
-            }
-            int_mod(self + rhs, modulo)
-        }
-    }
-
-    #[test]
-    fn test() {
-        assert_eq!(5_u32.add_mod(10, 8), 7);
-        assert_eq!(5_u64.add_mod(10, 8), 7);
-    }
-}
-
-struct T { pub size: f64 }
-
-mod ex06 {
-    use std::ops::Neg;
-    use num::Float;
-    use typegen::typegen2;
-
-    #[derive(PartialEq, Debug)]
-    pub struct Meter(f64);
-    #[derive(PartialEq, Debug)]
-    pub struct Foot(f64);
-
-    type T = Meter;
-
-    #[typegen2(T, Foot)]
-    impl Neg for T {
-        type Output = T;
-
-        fn neg(self) -> Self::Output {
-            let x: super::T = super::T { size: 0.0 };
-            fn inner_neg<T2: Float>(x: T2) -> T2 {
-                -x
-            }
-            Self(inner_neg(self.0 + x.size))
-        }
-    }
-
-    #[test]
-    fn test() {
-        assert_eq!(Meter(1.0).neg(), Meter(-1.0));
-    }
 }

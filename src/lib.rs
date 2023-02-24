@@ -1,4 +1,6 @@
 // Copyright 2023 Redglyph
+//
+// Macros and helpers. Contains procedural macros so nothing else than macros can be exported.
 
 //! # The typegen library
 //!
@@ -198,14 +200,11 @@
 //! see for example `#[typegen(T, i64, u32, i32)]`. That is why the best place for the alias
 //! declaration is right above the macro.
 
-use proc_macro_error::proc_macro_error;
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
-use proc_macro_error::abort;
-
-use syn::{ItemImpl, PathSegment, Generics, parse_quote, GenericParam, Token, parse_macro_input};
+use proc_macro_error::{proc_macro_error, abort};
 use quote::quote;
-use syn::fold::Fold;
+use syn::{Generics, GenericParam, Token, parse_macro_input};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -216,178 +215,7 @@ struct Types {
     new_types: Vec<Ident>
 }
 
-impl Fold for Types {
-
-    /// Triggers an error when a generic with the same name type is used:
-    fn fold_generics(&mut self, i: Generics) -> Generics {
-        for t in i.params.iter() {
-            match &t {
-                GenericParam::Type(t) => {
-                    if t.ident == self.current_type {
-                        abort!(t.span(),
-                            "Type '{}' is reserved for the substitution.", self.current_type.to_string();
-                            help = "Use another identifier for this local generic type."
-                        );
-
-                        // Other ways to generate an error message:
-
-                        // Yet another unstable feature: (but would be preferrable)
-                        // ----------------------------
-                        // t.span().unwrap()
-                        //     .error(ERROR_MSG)
-                        //     .emit();
-
-                        // This doesn't work well because it has to be inserted at the right
-                        // spot to avoid generating a syntax error (hard with folds):
-                        // --------------------------------------------------------------------
-                        // return parse_quote_spanned!{
-                        //     i.span() => compile_error!(ERROR_MSG)
-                        // }
-                        //
-                        // or
-                        //
-                        // return parse_quote_spanned!(t.span() =>
-                        //     compile_error!(#ERROR_MSG)
-                        // );
-
-                        // `panic!` works but doesn't give the location and shows a generic
-                        // error message (the useful bit is lower, in the "help" part):
-                        // ----------------------------------------------------------------
-                        // panic!("{ERROR_MSG}");
-                        //
-                        // error: custom attribute panicked
-                        //   --> tests\integration.rs:25:1
-                        //    |
-                        // 25 | #[return_as_is]
-                        //    | ^^^^^^^^^^^^^^^
-                        //    |
-                        //    = help: message: Type 'T' is reserved for the substitution. Use ...
-                    }
-                }
-                _ => {}
-            }
-        }
-        i
-    }
-
-    fn fold_path_segment(&mut self, ps: PathSegment) -> PathSegment {
-        let ident: &Ident = &ps.ident;
-        // let args: &PathArguments = &ps.arguments;
-        // print!("PathSemgnt.ident: {ident}, args: ");
-        // match args {
-        //     PathArguments::None => println!("none"),
-        //     PathArguments::AngleBracketed(_) => println!("<'a, T>"),
-        //     PathArguments::Parenthesized(_) => println!("(A, B) -> C"),
-        // };
-        if ident == &self.current_type {
-            let new_type = self.new_types.first().unwrap();
-            parse_quote!(#new_type)
-        } else {
-            ps
-        }
-    }
-}
-
-impl Parse for Types {
-    fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let vars = Punctuated::<Ident, Token![,]>::parse_terminated(input)?;
-        let mut new_types: Vec<Ident> = vars.into_iter().collect();
-        let current_type = new_types.remove(0);
-        Ok(Types { current_type, new_types })
-    }
-}
-
-/// Generates the attached trait implementation for all the types given in parameter.
-///
-/// ```ignore,rust
-/// #[typegen(type1, type2, type3)]
-/// impl Trait for type1 {
-///     // ...
-/// }
-/// ```
-///
-/// This macro successively substitutes the first type of the list (`type1`), which is used in the
-/// attached source code, with each of the following types (`type2`, `type3`) to generate all the
-/// variations. So `#[typegen(u64, i64, u32, i32)]` implements the original source code, then
-/// looks for all "`u64`" types and literally replaces them with `i64`, `u32` and `i32` to generate
-/// the four implementations.
-///
-/// # Example
-///
-/// This code generates the trait implementation for i64, u32, i32, u16, i16, u8, i8 and u64:
-///
-/// ```
-/// use typegen::typegen;
-///
-/// pub trait ToU64 {
-///     fn into_u64(self) -> u64;
-/// }
-///
-/// type T = u64;
-///
-/// #[typegen(T, i64, u32, i32, u16, i16, u8, i8)]
-/// impl ToU64 for T {
-///     fn into_u64(self) -> u64 {
-///         self as u64
-///     }
-/// }
-/// ```
-///
-/// # Limitations
-///
-/// * Rust doesn't allow alias constructors, like `T(1.0)` in the code below. When it is needed,
-///   `Self` or a trait associated type is usually equivalent: here, `Self(1.0)`. In the rare event
-///   that no substitute is available, consider using the `Default` trait or creating a specific one.
-///
-/// ```compile_fail,rust
-/// # use typegen::typegen;
-/// # trait Neutral { fn mul_neutral(&self) -> Self; }
-/// # struct Foot(f64);
-/// # struct Mile(f64);
-/// # struct Meter(f64);
-/// # type T = Meter;
-/// #[typegen(T, Foot, Mile)]
-/// impl Neutral for T {
-///     fn mul_neutral(&self) -> Self {
-///         T(1.0)  // <== ERROR, use Self(1.0) instead
-///     }
-/// }
-/// ```
-///
-/// * The macro doesn't handle scopes, so it doesn't support any type declaration with the same name
-/// as the type that must be substituted. This, for instance, fails to compile:
-///
-/// ```compile_fail,rust
-/// # use typegen::typegen;
-/// # type T = u64;
-/// #[typegen(T, i64, u32, i32)]
-/// impl AddMod for T {
-///     type Output = T;
-///
-///     fn add_mod(self, rhs: Self) -> Self::Output {
-///         fn fast_mod<T: Num> (a: T, b: T) { // ... }   // <== ERROR, conflicting 'T'
-///         // ...
-/// # }}}
-/// ```
-#[proc_macro_attribute]
-#[proc_macro_error]
-pub fn typegen(args: TokenStream, item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as ItemImpl);
-    let mut types = parse_macro_input!(args as Types);
-    let mut output = TokenStream::new();
-    while !types.new_types.is_empty() {
-        let modified = types.fold_item_impl(input.clone());
-        output.extend(TokenStream::from(quote!(#modified)));
-        types.new_types.remove(0);
-    }
-    output.extend(TokenStream::from(quote!(#input)));
-    output
-}
-
-//==================================================================================================
-
 use syn::visit_mut::{VisitMut};
-// use syn::{Expr, File, Lit, LitInt, TypePath, Path};
 use syn::{File, TypePath};
 
 impl VisitMut for Types {
@@ -483,9 +311,91 @@ impl VisitMut for Types {
     }
 }
 
+
+impl Parse for Types {
+    fn parse(input: ParseStream) -> syn::parse::Result<Self> {
+        let vars = Punctuated::<Ident, Token![,]>::parse_terminated(input)?;
+        let mut new_types: Vec<Ident> = vars.into_iter().collect();
+        let current_type = new_types.remove(0);
+        Ok(Types { current_type, new_types })
+    }
+}
+
+/// Generates the attached trait implementation for all the types given in parameter.
+///
+/// ```ignore,rust
+/// #[typegen(type1, type2, type3)]
+/// impl Trait for type1 {
+///     // ...
+/// }
+/// ```
+///
+/// This macro successively substitutes the first type of the list (`type1`), which is used in the
+/// attached source code, with each of the following types (`type2`, `type3`) to generate all the
+/// variations. So `#[typegen(u64, i64, u32, i32)]` implements the original source code, then
+/// looks for all "`u64`" types and literally replaces them with `i64`, `u32` and `i32` to generate
+/// the four implementations.
+///
+/// # Example
+///
+/// This code generates the trait implementation for i64, u32, i32, u16, i16, u8, i8 and u64:
+///
+/// ```
+/// use typegen::typegen;
+///
+/// pub trait ToU64 {
+///     fn into_u64(self) -> u64;
+/// }
+///
+/// type T = u64;
+///
+/// #[typegen(T, i64, u32, i32, u16, i16, u8, i8)]
+/// impl ToU64 for T {
+///     fn into_u64(self) -> u64 {
+///         self as u64
+///     }
+/// }
+/// ```
+///
+/// # Limitations
+///
+/// * Rust doesn't allow alias constructors, like `T(1.0)` in the code below. When it is needed,
+///   `Self` or a trait associated type is usually equivalent: here, `Self(1.0)`. In the rare event
+///   that no substitute is available, consider using the `Default` trait or creating a specific one.
+///
+/// ```compile_fail,rust
+/// # use typegen::typegen;
+/// # trait Neutral { fn mul_neutral(&self) -> Self; }
+/// # struct Foot(f64);
+/// # struct Mile(f64);
+/// # struct Meter(f64);
+/// # type T = Meter;
+/// #[typegen(T, Foot, Mile)]
+/// impl Neutral for T {
+///     fn mul_neutral(&self) -> Self {
+///         T(1.0)  // <== ERROR, use Self(1.0) instead
+///     }
+/// }
+/// ```
+///
+/// * The macro doesn't handle scopes, so it doesn't support any type declaration with the same name
+/// as the type that must be substituted. This, for instance, fails to compile:
+///
+/// ```compile_fail,rust
+/// # use typegen::typegen;
+/// # type T = u64;
+/// #[typegen(T, i64, u32, i32)]
+/// impl AddMod for T {
+///     type Output = T;
+///
+///     fn add_mod(self, rhs: Self) -> Self::Output {
+///         fn fast_mod<T: Num> (a: T, b: T) { // ... }   // <== ERROR, conflicting 'T'
+///         // ...
+/// # }}}
+/// ```
 #[proc_macro_attribute]
 #[proc_macro_error]
-pub fn typegen2(args: TokenStream, item: TokenStream) -> TokenStream {
+pub fn typegen(args: TokenStream, item: TokenStream) -> TokenStream {
     // let input = parse_macro_input!(item as ItemImpl);
     let ast: File = syn::parse(item).unwrap();
     let mut types = parse_macro_input!(args as Types);
@@ -498,44 +408,4 @@ pub fn typegen2(args: TokenStream, item: TokenStream) -> TokenStream {
     }
     output.extend(TokenStream::from(quote!(#ast)));
     output
-}
-
-#[cfg(tests)]
-mod visit_example {
-    use quote::quote;
-    use syn::visit_mut::{self, VisitMut};
-    use syn::{parse_quote, Expr, File, Lit, LitInt};
-
-    struct BigintReplace;
-
-    impl VisitMut for BigintReplace {
-        fn visit_expr_mut(&mut self, node: &mut Expr) {
-            if let Expr::Lit(expr) = &node {
-                if let Lit::Int(int) = &expr.lit {
-                    if int.suffix() == "u256" {
-                        let digits = int.base10_digits();
-                        let unsuffixed: LitInt = syn::parse_str(digits).unwrap();
-                        *node = parse_quote!(bigint::u256!(#unsuffixed));
-                        return;
-                    }
-                }
-            }
-
-            // Delegate to the default impl to visit nested expressions.
-            visit_mut::visit_expr_mut(self, node);
-        }
-    }
-
-    #[test]
-    fn main() {
-        let code = quote! {
-            fn main() {
-                let _ = 999u256;
-            }
-        };
-
-        let mut syntax_tree: File = syn::parse2(code).unwrap();
-        BigintReplace.visit_file_mut(&mut syntax_tree);
-        println!("{}", quote!(#syntax_tree));
-    }
 }
