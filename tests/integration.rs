@@ -103,7 +103,6 @@ mod ex02 {
 }
 
 mod ex03 {
-    use num::Num;
     use typegen::typegen2;
 
     pub trait ToU64 {
@@ -125,8 +124,6 @@ mod ex03 {
     impl ToU64 for T {
         /// Transforms the value into a `u64` type
         fn into_u64(self) -> u64 {
-            // TODO: detect this and produce an error:
-            // fn dummy<T: Num + std::fmt::Display>(x: T) { println!("{x}"); }
             const T: u64 = 0;
             self as u64 + T
         }
@@ -222,5 +219,38 @@ mod ex05 {
     fn test() {
         assert_eq!(5_u32.add_mod(10, 8), 7);
         assert_eq!(5_u64.add_mod(10, 8), 7);
+    }
+}
+
+struct T { pub size: f64 }
+
+mod ex06 {
+    use std::ops::Neg;
+    use num::Float;
+    use typegen::typegen2;
+
+    #[derive(PartialEq, Debug)]
+    pub struct Meter(f64);
+    #[derive(PartialEq, Debug)]
+    pub struct Foot(f64);
+
+    type T = Meter;
+
+    #[typegen2(T, Foot)]
+    impl Neg for T {
+        type Output = T;
+
+        fn neg(self) -> Self::Output {
+            let x: super::T = super::T { size: 0.0 };
+            fn inner_neg<T2: Float>(x: T2) -> T2 {
+                -x
+            }
+            Self(inner_neg(self.0 + x.size))
+        }
+    }
+
+    #[test]
+    fn test() {
+        assert_eq!(Meter(1.0).neg(), Meter(-1.0));
     }
 }

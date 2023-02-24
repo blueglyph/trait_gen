@@ -128,6 +128,8 @@
 //! }
 //! ```
 //!
+//! <br/>
+//!
 //! ## Limitations
 //!
 //! * Rust doesn't allow alias constructors, like `T(1.0)` in the code below. When it is needed,
@@ -137,9 +139,14 @@
 //!
 //! ```compile_fail,rust
 //! # use typegen::typegen;
+//! # trait Neutral { fn mul_neutral(&self) -> Self; }
+//! # struct Foot(f64);
+//! # struct Mile(f64);
+//! # struct Meter(f64);
+//! # type T = Meter;
 //! #[typegen(T, Foot, Mile)]
 //! impl Neutral for T {
-//!     fn mul_neutral() -> Self {
+//!     fn mul_neutral(&self) -> Self {
 //!         T(1.0)  // <== ERROR, use Self(1.0) instead
 //!     }
 //! }
@@ -171,6 +178,14 @@
 //!     }
 //! }
 //! ```
+//!
+//! * If the `T` identifier above is only a part of the type path, then is safe to use. For example,
+//! `super::T`, `T<u64>` or `T(u64)` will not be replaced by `#[typegen(T, ...)]`. But on the other
+//! hand, those type paths cannot be substituted either (yet) -- you cannot use
+//! `#[typegen(T<u64>, ...)]` or `#[typegen(super::T, ...)]`. This can be worked around by using
+//! type aliases or a `use` clause.
+//!
+//! <br/>
 //!
 //! # Remarks
 //!
@@ -209,7 +224,6 @@ impl Fold for Types {
             match &t {
                 GenericParam::Type(t) => {
                     if t.ident == self.current_type {
-                        let col_start: proc_macro::Span = t.span().unwrap();
                         abort!(t.span(),
                             "Type '{}' is reserved for the substitution.", self.current_type.to_string();
                             help = "Use another identifier for this local generic type."
@@ -326,9 +340,15 @@ impl Parse for Types {
 ///   that no substitute is available, consider using the `Default` trait or creating a specific one.
 ///
 /// ```compile_fail,rust
+/// # use typegen::typegen;
+/// # trait Neutral { fn mul_neutral(&self) -> Self; }
+/// # struct Foot(f64);
+/// # struct Mile(f64);
+/// # struct Meter(f64);
+/// # type T = Meter;
 /// #[typegen(T, Foot, Mile)]
 /// impl Neutral for T {
-///     fn mul_neutral() -> Self {
+///     fn mul_neutral(&self) -> Self {
 ///         T(1.0)  // <== ERROR, use Self(1.0) instead
 ///     }
 /// }
@@ -338,6 +358,8 @@ impl Parse for Types {
 /// as the type that must be substituted. This, for instance, fails to compile:
 ///
 /// ```compile_fail,rust
+/// # use typegen::typegen;
+/// # type T = u64;
 /// #[typegen(T, i64, u32, i32)]
 /// impl AddMod for T {
 ///     type Output = T;
@@ -345,6 +367,7 @@ impl Parse for Types {
 ///     fn add_mod(self, rhs: Self) -> Self::Output {
 ///         fn fast_mod<T: Num> (a: T, b: T) { // ... }   // <== ERROR, conflicting 'T'
 ///         // ...
+/// # }}}
 /// ```
 #[proc_macro_attribute]
 #[proc_macro_error]
@@ -363,22 +386,105 @@ pub fn typegen(args: TokenStream, item: TokenStream) -> TokenStream {
 
 //==================================================================================================
 
-use syn::visit_mut::{self, VisitMut};
-use syn::{Expr, File, Lit, LitInt, TypePath, Path};
+use syn::visit_mut::{VisitMut};
+// use syn::{Expr, File, Lit, LitInt, TypePath, Path};
+use syn::{File, TypePath};
 
 impl VisitMut for Types {
+
     fn visit_type_path_mut(&mut self, i: &mut TypePath) {
         let TypePath { path, .. } = i;
-        for mut s in path.segments.iter_mut() {
-            let ident: &mut Ident = &mut (s.ident);
+
+        // The complete path can be obtained with:
+        // let pathname: String = path.segments.iter().map(|p| p.ident.to_string()).collect::<Vec<_>>().join("::");
+        //
+        // Alternatively, `path.get_ident()`, returns Some(name) when there is only one segment, like `T`,
+        // or None if there are multiple segments, like `super::T`.
+        //
+        // If we want to support segments in the macro arguments, we have to change the type of
+        // Types::current_type to TypePath (Punctuated doesn't include colon prefixes), and
+        // perform a different replacement here.
+        //
+        // For now, we constrain the type to be substituted to be a simple identifier.
+
+        // debug code:
+        //
+        // let idstr = if let Some(id) = path.get_ident() {
+        //     id.to_string()
+        // } else {
+        //     "N/A".to_string()
+        // };
+        // let pathname: String = path.segments.iter().map(|p| p.ident.to_string()).collect::<Vec<_>>().join("::");
+        // println!("path = {} or {}", pathname, idstr);
+
+        if let Some(ident) = path.get_ident() {
+            // if we have a simple identifier (no "::", no "<...>", no "(...)"), replaces it if it matches:
             if ident == &self.current_type {
-                s.ident = self.new_types.first().unwrap().clone();
+                for mut s in path.segments.iter_mut() {
+                    let ident: &mut Ident = &mut (s.ident);
+                    if ident == &self.current_type {
+                        s.ident = self.new_types.first().unwrap().clone();
+                        break
+                    }
+                }
             }
         }
+    }
+
+    fn visit_generics_mut(&mut self, i: &mut Generics) {
+        for t in i.params.iter() {
+            match &t {
+                GenericParam::Type(t) => {
+                    if t.ident == self.current_type {
+                        abort!(t.span(),
+                            "Type '{}' is reserved for the substitution.", self.current_type.to_string();
+                            help = "Use another identifier for this local generic type."
+                        );
+
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Note: other ways to generate an error message:
+        //
+        // Yet another unstable feature: (but would be preferrable)
+        // ----------------------------
+        // t.span().unwrap()
+        //     .error(ERROR_MSG)
+        //     .emit();
+        //
+        // This doesn't work well because it has to be inserted at the right
+        // spot to avoid generating a syntax error (hard with folds):
+        // --------------------------------------------------------------------
+        // return parse_quote_spanned!{
+        //     i.span() => compile_error!(ERROR_MSG)
+        // }
+        //
+        // or
+        //
+        // return parse_quote_spanned!(t.span() =>
+        //     compile_error!(#ERROR_MSG)
+        // );
+        //
+        // `panic!` works but doesn't give the location and shows a generic
+        // error message (the useful bit is lower, in the "help" part):
+        // ----------------------------------------------------------------
+        // panic!("{ERROR_MSG}");
+        //
+        // error: custom attribute panicked
+        //   --> tests\integration.rs:25:1
+        //    |
+        // 25 | #[return_as_is]
+        //    | ^^^^^^^^^^^^^^^
+        //    |
+        //    = help: message: Type 'T' is reserved for the substitution. Use ...
     }
 }
 
 #[proc_macro_attribute]
+#[proc_macro_error]
 pub fn typegen2(args: TokenStream, item: TokenStream) -> TokenStream {
     // let input = parse_macro_input!(item as ItemImpl);
     let ast: File = syn::parse(item).unwrap();
@@ -394,6 +500,7 @@ pub fn typegen2(args: TokenStream, item: TokenStream) -> TokenStream {
     output
 }
 
+#[cfg(tests)]
 mod visit_example {
     use quote::quote;
     use syn::visit_mut::{self, VisitMut};
@@ -419,6 +526,7 @@ mod visit_example {
         }
     }
 
+    #[test]
     fn main() {
         let code = quote! {
             fn main() {
@@ -429,10 +537,5 @@ mod visit_example {
         let mut syntax_tree: File = syn::parse2(code).unwrap();
         BigintReplace.visit_file_mut(&mut syntax_tree);
         println!("{}", quote!(#syntax_tree));
-    }
-
-    #[test]
-    fn test() {
-        main();
     }
 }
