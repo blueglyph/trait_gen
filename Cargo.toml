@@ -1,11 +1,12 @@
 [package]
 name = "trait-gen"
 description = "Trait implementation generator macro"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Redglyph"]
 categories = ["rust-patterns"]
 keywords = ["proc-macro", "macro", "trait", "generator"]
+documentation = "https://docs.rs/trait-gen"
 homepage = "https://github.com/blueglyph/trait_gen"
 license = "MIT"
 repository = "https://github.com/blueglyph/trait_gen"
