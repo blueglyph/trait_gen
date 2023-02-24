@@ -1,0 +1,30 @@
+name: Rust-version
+
+on:
+  schedule:
+    - cron: '0 14 * * 6'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    steps:    
+      - uses: actions/checkout@v3
+        with: 
+          token: ${{ secrets.TOKEN_VERSION }}
+      - name: Fetch Rust version
+        run: |
+          rustc -V
+          rustc -V > .github/latest.txt
+      - name: Check for modified files
+        id: git-check
+        run: echo modified=$([ -z "`git status --porcelain`" ] && echo "false" || echo "true") >> $GITHUB_OUTPUT
+      - name: Commit latest release version
+        if: steps.git-check.outputs.modified == 'true'
+        run: |
+          git config --global user.name 'Redglyph'
+          git config --global user.email 'redglyph@gmail.com'
+          git commit -am "New Rust version"
+          git push
