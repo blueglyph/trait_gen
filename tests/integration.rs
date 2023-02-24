@@ -28,7 +28,7 @@ mod ex01 {
             // The first type identifier, here 'T', must not be redefined by a generic because the
             // macro doesn't handle scopes.
             //
-            // Uncomment to test that this is detected and generates an error:
+            // Uncomment the code below to see the error:
             // --------------------------------
             // fn fake<T: Sized>(_x: T) {
             //     println!("x-x");
@@ -59,7 +59,6 @@ mod ex01 {
     fn test_original_type() {
         let a_m = Meter(1.0);
         let b_m = Meter(2.0);
-
         let c_m = a_m + b_m + Meter::default();
         assert_eq!(c_m.0, 3.0);
     }
@@ -68,13 +67,11 @@ mod ex01 {
     fn test_generated_types() {
         let a_ft = Foot(1.0);
         let b_ft = Foot(2.0);
-
         let c_ft = a_ft + b_ft + Foot::default();
         assert_eq!(c_ft.0, 3.0);
 
         let a_mi = Mile(1.0);
         let b_mi = Mile(2.0);
-
         let c_mi = a_mi + b_mi + Mile::default();
         assert_eq!(c_mi.0, 3.0);
     }
@@ -106,6 +103,7 @@ mod ex02 {
     }
 }
 
+// Fake type for the test below
 struct T { pub offset: u64 }
 
 mod ex03 {

@@ -50,6 +50,7 @@
 //!
 //! The disadvantage is the lack of support for declarative macros with the IntelliJ plugin,
 //! although this is an ongoing work (see [tracking issue](https://github.com/intellij-rust/intellij-rust/issues/6908)).
+//! There are also a few limitations of the current version described in the [Limitations](#limitations) section.
 //!
 //! <br/>
 //!
@@ -181,9 +182,9 @@
 //! }
 //! ```
 //!
-//! * If the `T` identifier above is only a part of the type path, then is safe to use. For example,
-//! `super::T`, `T<u64>` or `T(u64)` will not be replaced by `#[trait_gen(T, ...)]`. But on the other
-//! hand, those type paths cannot be substituted either (yet) -- you cannot use
+//! * If the `T` identifier above is only a part of the type path, then it is fine. For example,
+//! `super::T`, `T<u64>` or `T(u64)` will not be replaced when using `#[trait_gen(T, ...)]`. But on the other
+//! hand, those type paths cannot be substituted either (yet) - you cannot use
 //! `#[trait_gen(T<u64>, ...)]` or `#[trait_gen(super::T, ...)]`. This can be worked around by using
 //! type aliases or a `use` clause.
 //!
@@ -204,19 +205,17 @@ use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use proc_macro_error::{proc_macro_error, abort};
 use quote::quote;
-use syn::{Generics, GenericParam, Token, parse_macro_input};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
+use syn::visit_mut::VisitMut;
 
 #[derive(Debug)]
 struct Types {
     current_type: Ident,
     new_types: Vec<Ident>
 }
-
-use syn::visit_mut::{VisitMut};
-use syn::{File, TypePath};
 
 impl VisitMut for Types {
 
@@ -269,45 +268,17 @@ impl VisitMut for Types {
                             help = "Use another identifier for this local generic type."
                         );
 
+                        // replace the 'abort!' above with this once it is stable:
+                        //
+                        // t.span().unwrap()
+                        //     .error(format!("Type '{}' is reserved for the substitution.", self.current_type.to_string()))
+                        //     .help("Use another identifier for this local generic type.")
+                        //     .emit();
                     }
                 }
                 _ => {}
             }
         }
-
-        // Note: other ways to generate an error message:
-        //
-        // Yet another unstable feature: (but would be preferrable)
-        // ----------------------------
-        // t.span().unwrap()
-        //     .error(ERROR_MSG)
-        //     .emit();
-        //
-        // This doesn't work well because it has to be inserted at the right
-        // spot to avoid generating a syntax error (hard with folds):
-        // --------------------------------------------------------------------
-        // return parse_quote_spanned!{
-        //     i.span() => compile_error!(ERROR_MSG)
-        // }
-        //
-        // or
-        //
-        // return parse_quote_spanned!(t.span() =>
-        //     compile_error!(#ERROR_MSG)
-        // );
-        //
-        // `panic!` works but doesn't give the location and shows a generic
-        // error message (the useful bit is lower, in the "help" part):
-        // ----------------------------------------------------------------
-        // panic!("{ERROR_MSG}");
-        //
-        // error: custom attribute panicked
-        //   --> tests\integration.rs:25:1
-        //    |
-        // 25 | #[return_as_is]
-        //    | ^^^^^^^^^^^^^^^
-        //    |
-        //    = help: message: Type 'T' is reserved for the substitution. Use ...
     }
 }
 
@@ -338,7 +309,8 @@ impl Parse for Types {
 ///
 /// # Example
 ///
-/// This code generates the trait implementation for i64, u32, i32, u16, i16, u8, i8 and u64:
+/// The following code generates the trait implementation for i64, u32, i32, u16, i16, u8, i8 and
+/// u64. Note the use of the `T` alias so that the `u64` return type and cast are not substituted:
 ///
 /// ```
 /// use trait_gen::trait_gen;
@@ -406,9 +378,9 @@ impl Parse for Types {
 /// }
 /// ```
 ///
-/// * If the `T` identifier above is only a part of the type path, then is safe to use. For example,
-/// `super::T`, `T<u64>` or `T(u64)` will not be replaced by `#[trait_gen(T, ...)]`. But on the other
-/// hand, those type paths cannot be substituted either (yet) -- you cannot use
+/// * If the `T` identifier above is only a part of the type path, then it is fine. For example,
+/// `super::T`, `T<u64>` or `T(u64)` will not be replaced when using `#[trait_gen(T, ...)]`. But on the other
+/// hand, those type paths cannot be substituted either (yet) - you cannot use
 /// `#[trait_gen(T<u64>, ...)]` or `#[trait_gen(super::T, ...)]`. This can be worked around by using
 /// type aliases or a `use` clause.
 #[proc_macro_attribute]
