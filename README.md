@@ -8,7 +8,9 @@
 This library provides attributes to generate the trait implementations for several
 types, without the need for custom declarative macros.
 
-For example,
+In the example below, the `Add` trait is implemented for the types `Meter`, `Foot` and `Mile`. The
+`T` type identifier is used to mark where the substitution takes place; it can be an existing type
+or alias but it's not mandatory. 
 
 ```rust
 use trait_gen::trait_gen;
@@ -46,11 +48,11 @@ impl_add_length! { Meter Foot Mile }
 ```
 
 The advantages of the first method are the clarity of the native code, the support of
-refactoring tools, editor syntactic awareness, and not having to convert the code to 
-the declarative macro syntax. Looking for the definition of an implementation method is 
+refactoring tools, editor syntactic and semantic awareness, and not having to convert the code into 
+a declarative macro. Looking for the definition of an implementation method is 
 also much easier with the full support of code-aware editors!
 
-The disadvantage is the current lack of support for procedural macros with the IntelliJ plugin,
+The disadvantage is the current lack of support for procedural macros with the _IntelliJ_ plugin,
 although this is an ongoing work (see [tracking issue](https://github.com/intellij-rust/intellij-rust/issues/6908)). A few work-arounds are discussed [later](#code-awareness-issues).
 
 There are also a few limitations of the current version described in the [Limitations](#limitations)
@@ -76,6 +78,7 @@ relevant errors. For example `#[trait_gen(T -> u64, f64)]` cannot be used with `
 ## Alternative format
 
 The attribute supports a shorter "legacy" format which was used in the earlier versions:
+
 ```rust
 #[trait_gen(type1, type2, type3)]
 impl Trait for type1 {
@@ -83,7 +86,9 @@ impl Trait for type1 {
 }
 ```
 
-Here, `type2` and `type3` are literally substituted for `type1` to generate their implementation, then the original code is implemented. This is a shortcut for the equivalent format:
+Here, `type2` and `type3` are literally substituted for `type1` to generate their implementation,
+then the original code is implemented for `type1`. This is a shortcut for the equivalent attribute
+with the other format:
 
 ```rust
 #[trait_gen(type1 -> type2, type3, type1)]
@@ -92,10 +97,9 @@ impl Trait for type1 {
 }
 ```
 
-_Remark: this strange ordering comes from an optimization in the legacy format, where the macro
-stores the code with the first type, writes it for the other types in their declaration order, then 
-adds the original code at the end. This makes no difference, except the order of the compiler
-messages if there are warnings or errors in the code - that's the only reason we mention it here._
+_Remark: this strange ordering comes from an optimization in the legacy format. This makes no
+difference, except the order of the compiler messages if there are warnings or errors in the
+code - that's the only reason we mention it here._
 
 The short format can be used when there is little risk of confusion, like in the example below.
 `Meter` is unlikely to be used in all the variations, so using an alias is unnecessary. The type
@@ -119,16 +123,49 @@ impl Add for Meter {
 }
 ```
 
+In some situations, one of the implemented types happens to be also required in all the
+implementations. Consider the following example:
+
+```rust
+pub trait ToU64 {
+    fn into_u64(self) -> u64;
+}
+
+#[trait_gen(u64, i64, u32, i32, u16, i16, u8, i8)]
+impl ToU64 for u64 {
+    fn into_u64(self) -> u64 {  // ERROR! Replaced by -> i64, u32, ...
+        self as u64
+    }
+}
+```
+
+This will not work because the return type of `into_u64()` will be replaced too! To prevent it,
+an alias must be used (or the other attribute format). This works:
+
+```rust
+type T = u64;
+
+#[trait_gen(T, i64, u32, i32, u16, i16, u8, i8)]
+impl ToU64 for T {
+    fn into_u64(self) -> u64 {
+        self as u64
+    }
+}
+```
+
 ## Code awareness issues
 
-Not all IDEs support procedural macros for code awareness yet, which removes some benefits
-of using this macro. For example, IntelliJ won't be able to provide any support while typing the
-code, nor will it be able to look for the definition of the implemented methods when they are 
-used later.
+_rust-analyzer_ supports procedural macros for code awareness, so everything should be fine for
+editors based on this Language Server Protocol implementation. Unfortunately this isn't the 
+case of all IDEs yet, which removes some benefits of using this macro. For instance, the 
+_IntelliJ_ plugin won't be able to provide much support while typing the code for an unknown 
+`T` type, nor will it be able to look for the definition of the implemented methods or even 
+suggest them when writing code.
 
-There are two work-arounds:
+Two work-arounds can help until the support for procedural macros is more widely available:
 
 * Defining an alias for the identifier used in the attribute:
+
   ```rust
     pub trait ToU64 {
         fn into_u64(self) -> u64;
@@ -143,10 +180,12 @@ There are two work-arounds:
         }
     }
   ```
+  
   Defining `T` doesn't change the produced code, but it allows the editor to understand it without
   expanding the macro. 
 
 * Implementing for an existing type, and using it as the first identifier:
+
   ```rust
     pub trait AddMod {
         fn add_mod(self, other: Self, m: Self) -> Self;
@@ -160,6 +199,7 @@ There are two work-arounds:
         }
     }
   ```
+  
   This is somewhat more confusing to read, and doesn't work if `u32` must remain in all the
   variations, like the `u64` it the previous example just above.
 
@@ -179,9 +219,10 @@ There are two work-arounds:
       }
   }
   ```
-  The same remains true with the other attribute format, because of a limitation in procedural
-  macros, which would make the substitution too risky. In short, there is no way to tell whether
-  `T` is a type to be substituted or something else:
+  
+  The other attribute format suffers from the same problem, because of a limitation in the current
+  version:
+
   ```rust
   #[trait_gen(T -> Meter, Foot, Mile)]
   impl Neutral for T {

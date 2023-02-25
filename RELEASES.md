@@ -1,3 +1,8 @@
+# 0.1.3 (2023-02-25)
+
+- add improved attribute format `#[trait_gen(T -> u64, i64, u32, i32)]`
+- simplify documentation
+
 # 0.1.2 (2023-02-24)
 
 - fix documentation URL & few typos

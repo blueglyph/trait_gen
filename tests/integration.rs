@@ -5,7 +5,10 @@
 // =============================================================================
 // First format:
 //
+//     // (T needn't be an alias or an existing type)
 //     #[trait_gen(T -> Meter, Foot, Mile)]
+// or
+//     #[trait_gen(Meter -> Meter, Foot, Mile)]
 // -----------------------------------------------------------------------------
 
 mod ex01a {
@@ -140,7 +143,7 @@ mod ex03a {
 }
 
 // =============================================================================
-// Second format:
+// Second "legacy" format:
 //
 //     type T = Meter;
 //     #[trait_gen(T, Foot, Mile)]

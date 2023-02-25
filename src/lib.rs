@@ -7,7 +7,9 @@
 //! This library provides attributes to generate the trait implementations for several
 //! types, without the need for custom declarative macros.
 //!
-//! For example,
+//! In the example below, the `Add` trait is implemented for the types `Meter`, `Foot` and `Mile`.
+//! The `T` type identifier is used to mark where the substitution takes place; it can be an
+//! existing type or alias but it's not mandatory.
 //!
 //! ```rust
 //! # use std::ops::Add;
@@ -50,11 +52,11 @@
 //! ```
 //!
 //! The advantages of the first method are the clarity of the native code, the support of
-//! refactoring tools, editor syntactic awareness, and not having to convert the code to
-//! the declarative macro syntax. Looking for the definition of an implementation method is
-//! also much easier with the full support of code-aware editors!
+//! refactoring tools, editor syntactic and semantic awareness, and not having to convert the code into
+//! a declarative macro. Looking for the definition of an implementation method is also much easier
+//! with the full support of code-aware editors!
 //!
-//! The disadvantage is the current lack of support for procedural macros with the IntelliJ plugin,
+//! The disadvantage is the current lack of support for procedural macros with the _IntelliJ_ plugin,
 //! although this is an ongoing work (see
 //! [tracking issue](https://github.com/intellij-rust/intellij-rust/issues/6908)). A few
 //! work-arounds are discussed [later](#code-awareness-issues).
@@ -63,6 +65,8 @@
 //! section.
 //!
 //! <br/>
+//!
+//! ## The trait_gen attribute
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
@@ -87,6 +91,7 @@
 //! ## Alternative format
 //!
 //! The attribute supports a shorter "legacy" format which was used in the earlier versions:
+//!
 //! ```rust
 //! # use trait_gen::trait_gen;
 //! # struct type1; struct type2; struct type3;
@@ -98,7 +103,8 @@
 //! ```
 //!
 //! Here, `type2` and `type3` are literally substituted for `type1` to generate their implementation,
-//! then the original code is implemented. This is a shortcut for the equivalent format:
+//! then the original code is implemented for `type1`. This is a shortcut for the equivalent
+//! attribute with the other format:
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
@@ -109,14 +115,14 @@
 //!     // ...
 //! }
 //! ```
-//! _Remark: this strange ordering comes from an optimization in the legacy format, where the macro
-//! stores the code with the first type, writes it for the other types in their declaration order, then
-//! adds the original code at the end. This makes no difference, except the order of the compiler
-//! messages if there are warnings or errors in the code - that's the only reason we mention it here._
+//!
+//! _Remark: this strange ordering comes from an optimization in the legacy format. This makes no
+//! difference, except the order of the compiler messages if there are warnings or errors in the
+//! code - that's the only reason we mention it here._
 //!
 //! The short format can be used when there is little risk of confusion, like in the example below.
-//! `Meter` is unlikely to be used in all the variations, so using an alias is unnecessary. The type
-//! to replace in the code must be in first position after the attribute:
+//! `Meter` is not used in the other type implementations, so using an alias is unnecessary. The
+//! type to replace in the code must be in first position after the attribute:
 //!
 //! ```rust
 //! use std::ops::Add;
@@ -136,18 +142,57 @@
 //! }
 //! ```
 //!
+//! In some situations, one of the implemented types happens to be also required in all the
+//! implementations. Consider the following example:
+//!
+//! ```rust,compile_fail
+//! # use trait_gen::trait_gen;
+//! pub trait ToU64 {
+//!     fn into_u64(self) -> u64;
+//! }
+//!
+//! #[trait_gen(u64, i64, u32, i32, u16, i16, u8, i8)]
+//! impl ToU64 for u64 {
+//!     fn into_u64(self) -> u64 {  // ERROR! Replaced by -> i64, u32, ...
+//!         self as u64
+//!     }
+//! }
+//! ```
+//!
+//! This will not work because the return type of `into_u64()` will be replaced too! To prevent it,
+//! an alias must be used (or the other attribute format). This works:
+//!
+//! ```rust
+//! # use trait_gen::trait_gen;
+//! # pub trait ToU64 {
+//! #     fn into_u64(self) -> u64;
+//! # }
+//! #
+//! type T = u64;
+//!
+//! #[trait_gen(T, i64, u32, i32, u16, i16, u8, i8)]
+//! impl ToU64 for T {
+//!     fn into_u64(self) -> u64 {
+//!         self as u64
+//!     }
+//! }
+//! ```
+//!
 //! <br/>
 //!
 //! ## Code awareness issues
 //!
-//! Not all IDEs support procedural macros for code awareness yet, which removes some benefits
-//! of using this macro. For example, IntelliJ won't be able to provide any support while typing the
-//! code, nor will it be able to look for the definition of the implemented methods when they are
-//! used later.
+//! _rust-analyzer_ supports procedural macros for code awareness, so everything should be fine for
+//! editors based on this Language Server Protocol implementation. Unfortunately this isn't the
+//! case of all IDEs yet, which removes some benefits of using this macro. For instance, the
+//! _IntelliJ_ plugin won't be able to provide much support while typing the code for an unknown
+//! `T` type, nor will it be able to look for the definition of the implemented methods or even
+//! suggest them when writing code.
 //!
-//! There are two work-arounds:
+//! Two work-arounds can help until the support for procedural macros is more widely available:
 //!
 //! * Defining an alias for the identifier used in the attribute:
+//!
 //!   ```rust
 //!     # use trait_gen::trait_gen;
 //!     pub trait ToU64 {
@@ -163,10 +208,12 @@
 //!         }
 //!     }
 //!   ```
+//!
 //!   Defining `T` doesn't change the produced code, but it allows the editor to understand it without
 //!   expanding the macro.
 //!
 //! * Implementing for an existing type, and using it as the first identifier:
+//!
 //!   ```rust
 //!     # use trait_gen::trait_gen;
 //!     pub trait AddMod {
@@ -181,6 +228,7 @@
 //!         }
 //!     }
 //!   ```
+//!
 //!   This is somewhat more confusing to read, and doesn't work if `u32` must remain in all the
 //!   variations, like the `u64` it the previous example just above.
 //!
@@ -208,9 +256,8 @@
 //!   }
 //!   ```
 //!
-//!   The same remains true with the other attribute format, because of a limitation in procedural
-//!   macros, which would make the substitution too risky. In short, there is no way to tell whether
-//!   `T` is a type to be substituted or something else:
+//!   The other attribute format suffers from the same problem, because of a limitation in the current
+//!   version:
 //!
 //!   ```rust,compile_fail
 //!   # use trait_gen::trait_gen;
@@ -307,8 +354,8 @@ impl VisitMut for Types {
         // Alternatively, `path.get_ident()`, returns Some(name) when there is only one segment, like `T`,
         // or None if there are multiple segments, like `super::T`.
         //
-        // If we want to support segments in the macro arguments, we have to change the type of
-        // Types::current_type to TypePath (Punctuated doesn't include colon prefixes), and
+        // If we want to support segments in the macro arguments, or substitution in expressions (e.g. constructors),
+        // we have to change the type of Types::current_type to Path (Punctuated doesn't include colon prefixes), and
         // perform a different replacement here.
         //
         // For now, we constrain the type to be substituted to be a simple identifier.
@@ -346,10 +393,6 @@ impl Parse for Types {
             input.parse::<Token![->]>()?;
             let vars = Punctuated::<Ident, Token![,]>::parse_terminated(input)?;
             let new_types: Vec<Ident> = vars.into_iter().collect();
-            // println!("{} => {}", 
-            //     current_type,
-            //     new_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ")
-            // );
             Ok(Types { current_type, new_types, current_defined: false })
         } else {
             let vars = Punctuated::<Ident, Token![,]>::parse_terminated(input)?;
@@ -361,6 +404,10 @@ impl Parse for Types {
 }
 
 /// Generates the attached trait implementation for all the types given in parameter.
+///
+/// In the example below, the `Add` trait is implemented for the types `Meter`, `Foot` and `Mile`. The
+/// `T` type identifier is used to mark where the substitution takes place; it can be an existing type
+/// or alias but it's not mandatory.
 ///
 /// ```rust
 /// # use std::ops::Add;
@@ -379,10 +426,6 @@ impl Parse for Types {
 ///     }
 /// }
 /// ```
-///
-/// This attribute successively substitutes the first identifier of the list (`T`), which is used
-/// as a type in the attached source code, with each of the following types (`Meter`, `Foot`, `Mile`)
-/// to generate all the variations.
 ///
 /// <br/>
 ///
@@ -420,9 +463,12 @@ impl Parse for Types {
 ///   `Self` or a trait associated type is usually equivalent: here, `Self(1.0)`. In the rare event
 ///   that no substitute is available, consider using the `Default` trait or creating a specific one.
 ///
-///   ```rust,ignore
-///   type T = Meter;
-///
+///   ```rust,compile_fail
+///   # use trait_gen::trait_gen;
+///   # trait Neutral { fn mul_neutral(&self) -> Self; }
+///   # struct Foot(f64);
+///   # struct Mile(f64);
+///   # struct Meter(f64);
 ///   #[trait_gen(T, Foot, Mile)]
 ///   impl Neutral for T {
 ///       fn mul_neutral(&self) -> Self {
@@ -431,9 +477,8 @@ impl Parse for Types {
 ///   }
 ///   ```
 ///
-///   The same remains true with the other attribute format, because of a limitation in procedural
-///   macros, which would make the substitution too risky. In short, there is no way to tell whether
-///   `T` is a type to be substituted or something else:
+///   The other attribute format suffers from the same problem, because of a limitation in the current
+///   version:
 ///
 ///   ```rust,compile_fail
 ///   #[trait_gen(T -> Meter, Foot, Mile)]
@@ -469,7 +514,6 @@ impl Parse for Types {
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
-    // let input = parse_macro_input!(item as ItemImpl);
     let ast: File = syn::parse(item).unwrap();
     let mut types = parse_macro_input!(args as Types);
     let mut output = TokenStream::new();
