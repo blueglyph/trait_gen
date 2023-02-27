@@ -256,10 +256,9 @@
 //!   }
 //!   ```
 //!
-//!   The other attribute format suffers from the same problem, because of a limitation in the current
-//!   version:
+//!   The other attribute format doesn't suffer from the same problem:
 //!
-//!   ```rust,compile_fail
+//!   ```rust
 //!   # use trait_gen::trait_gen;
 //!   # trait Neutral { fn mul_neutral(&self) -> Self; }
 //!   # struct Foot(f64);
@@ -268,7 +267,7 @@
 //!   #[trait_gen(T -> Meter, Foot, Mile)]
 //!   impl Neutral for T {
 //!       fn mul_neutral(&self) -> Self {
-//!           T(1.0)  // <== ERROR, use Self(1.0) instead
+//!           T(1.0)  // <== OK, always substituted with either Meter, Foot or Mile
 //!       }
 //!   }
 //!   ```
@@ -308,20 +307,71 @@ use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use proc_macro_error::{proc_macro_error, abort};
 use quote::quote;
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::visit_mut::VisitMut;
 
+const VERBOSE: bool = false;
+
 #[derive(Debug)]
 struct Types {
     current_type: Ident,
     new_types: Vec<Ident>,
-    current_defined: bool
+    current_defined: bool,
+    enabled: Vec<bool> // cannot substitue when last is false (can substitute if empty)
+}
+
+impl Types {
+    fn substitution_enabled(&self) -> bool {
+        *self.enabled.last().unwrap_or(&true)
+    }
+}
+
+fn pathname(path: &Path) -> String {
+    path.segments.iter()
+        .map(|p| {
+            let mut ident = p.ident.to_string();
+            match &p.arguments {
+                PathArguments::None => {}
+                PathArguments::AngleBracketed(_) => ident.push_str("<..>"),
+                PathArguments::Parenthesized(_) => ident.push_str("(..)"),
+            };
+            ident
+        })
+        .collect::<Vec<_>>()
+        .join("::")
 }
 
 impl VisitMut for Types {
+    fn visit_expr_mut(&mut self, node: &mut Expr) {
+        let mut enabled = self.substitution_enabled();
+        match node {
+            // allows substitutions for the nodes below, and until a new Expr is met:
+            Expr::Call(_) => enabled = true,
+            Expr::Cast(_) => enabled = true,
+            Expr::Struct(_) => enabled = true,
+            Expr::Type(_) => enabled = true,
+
+            // 'ExprPath' is the node checking for authorization through ExprPath.path,
+            // so the current 'enabled' is preserved: (see also visit_path_mut())
+            Expr::Path(_) => { /* don't change */ }
+
+            // all other expressions in general must disable substitution:
+            _ => enabled = false,
+        };
+        self.enabled.push(enabled);
+        syn::visit_mut::visit_expr_mut(self, node);
+        self.enabled.pop();
+    }
+
+    // fn visit_expr_call_mut(&mut self, node: &mut ExprCall) {
+    //     self.enabled.push(true);
+    //     syn::visit_mut::visit_expr_call_mut(self, node);
+    //     self.enabled.pop();
+    // }
+
     fn visit_generics_mut(&mut self, i: &mut Generics) {
         for t in i.params.iter() {
             match &t {
@@ -345,43 +395,33 @@ impl VisitMut for Types {
         }
     }
 
-    fn visit_type_path_mut(&mut self, i: &mut TypePath) {
-        let TypePath { path, .. } = i;
-
-        // The complete path can be obtained with:
-        // let pathname: String = path.segments.iter().map(|p| p.ident.to_string()).collect::<Vec<_>>().join("::");
-        //
-        // Alternatively, `path.get_ident()`, returns Some(name) when there is only one segment, like `T`,
-        // or None if there are multiple segments, like `super::T`.
-        //
-        // If we want to support segments in the macro arguments, or substitution in expressions (e.g. constructors),
-        // we have to change the type of Types::current_type to Path (Punctuated doesn't include colon prefixes), and
-        // perform a different replacement here.
-        //
-        // For now, we constrain the type to be substituted to be a simple identifier.
-
-        // debug code:
-        //
-        // let idstr = if let Some(id) = path.get_ident() {
-        //     id.to_string()
-        // } else {
-        //     "N/A".to_string()
-        // };
-        // let pathname: String = path.segments.iter().map(|p| p.ident.to_string()).collect::<Vec<_>>().join("::");
-        // println!("path = {} or {}", pathname, idstr);
-
-        if let Some(ident) = path.get_ident() {
-            // if we have a simple identifier (no "::", no "<...>", no "(...)"), replaces it if it matches:
-            if ident == &self.current_type {
-                for mut s in path.segments.iter_mut() {
-                    let ident: &mut Ident = &mut (s.ident);
-                    if ident == &self.current_type {
-                        s.ident = self.new_types.first().unwrap().clone();
-                        break
+    fn visit_path_mut(&mut self, path: &mut Path) {
+        if self.substitution_enabled() {
+            if VERBOSE { println!("path: {}", pathname(path)); }
+            if let Some(ident) = path.get_ident() {
+                // if we have a simple identifier (no "::", no "<...>", no "(...)"), replaces it if it matches:
+                if ident == &self.current_type {
+                    for mut s in path.segments.iter_mut() {
+                        let ident: &mut Ident = &mut (s.ident);
+                        if ident == &self.current_type {
+                            s.ident = self.new_types.first().unwrap().clone();
+                            break;
+                        }
                     }
                 }
             }
+        } else {
+            if VERBOSE { println!("disabled path: {}", pathname(path)); }
+            syn::visit_mut::visit_path_mut(self, path);
         }
+    }
+
+    fn visit_type_path_mut(&mut self, typepath: &mut TypePath) {
+        self.enabled.push(true);
+        let TypePath { path, .. } = typepath;
+        if VERBOSE { println!("typepath: {}", pathname(path)); }
+        syn::visit_mut::visit_type_path_mut(self, typepath);
+        self.enabled.pop();
     }
 }
 
@@ -393,12 +433,12 @@ impl Parse for Types {
             input.parse::<Token![->]>()?;
             let vars = Punctuated::<Ident, Token![,]>::parse_terminated(input)?;
             let new_types: Vec<Ident> = vars.into_iter().collect();
-            Ok(Types { current_type, new_types, current_defined: false })
+            Ok(Types { current_type, new_types, current_defined: false, enabled: Vec::new() })
         } else {
             let vars = Punctuated::<Ident, Token![,]>::parse_terminated(input)?;
             let mut new_types: Vec<Ident> = vars.into_iter().collect();
             let current_type = new_types.remove(0);
-            Ok(Types { current_type, new_types, current_defined: true })
+            Ok(Types { current_type, new_types, current_defined: true, enabled: Vec::new() })
         }
     }
 }
@@ -521,6 +561,8 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
         let mut modified_ast = ast.clone();
         types.visit_file_mut(&mut modified_ast);
         output.extend(TokenStream::from(quote!(#modified_ast)));
+        assert!(types.enabled.is_empty(), "self.enabled has {} entries after type {}",
+                types.enabled.len(), types.new_types.first().unwrap().to_string());
         types.new_types.remove(0);
     }
     if types.current_defined {

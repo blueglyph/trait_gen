@@ -11,6 +11,36 @@
 //     #[trait_gen(Meter -> Meter, Foot, Mile)]
 // -----------------------------------------------------------------------------
 
+// Fake types for the tests
+struct T { pub offset: u64 }
+struct U(u32);
+
+mod subst_cases {
+    use trait_gen::trait_gen;
+
+    pub trait AddMod {
+        fn add_mod(self, other: Self, m: Self) -> Self;
+    }
+
+    #[trait_gen(U -> u32, i32)]
+    impl AddMod for U {
+        fn add_mod(self, other: U, m: U) -> U {
+            // type must change, constant name must stay:
+            const U: U = 0;
+            // type must stay:
+            let offset: super::U = super::U(0);
+            // constant must stay, cast type must change:
+            (self + other + U + offset.0 as U) % m
+        }
+    }
+
+    #[test]
+    fn test_add_mod() {
+        assert_eq!(10_u32.add_mod(5, 8), 7);
+        assert_eq!(10_i32.add_mod(5, 8), 7);
+    }
+}
+
 mod ex01a {
     use std::ops::Add;
     use trait_gen::trait_gen;
@@ -38,7 +68,8 @@ mod ex01a {
         type Output = T;
 
         fn add(self, rhs: T) -> Self::Output {
-            Self(self.0 + rhs.0)
+            const T2: f64 = 0.0;
+            Self(self.0 + rhs.0 + T2)
         }
     }
 
@@ -114,9 +145,9 @@ mod ex03a {
 
             // Constant names with the same name as the substituted type are fine:
             // (same for variable and functions, though they shouldn't have the same case)
-            const T: u64 = 0;
+            const T2: u64 = 0;
 
-            self as u64 + T + x.offset
+            self as u64 + T2 + x.offset
         }
     }
 
@@ -251,9 +282,6 @@ mod ex02b {
         assert_eq!(10_f64.add_mod(5.0, 8.0), 7.0);
     }
 }
-
-// Fake type for the test below
-struct T { pub offset: u64 }
 
 mod ex03b {
     use trait_gen::trait_gen;
