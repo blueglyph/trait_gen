@@ -18,7 +18,7 @@ struct U(u32);
 mod subst_cases {
     use trait_gen::trait_gen;
 
-    pub trait AddMod {
+    trait AddMod {
         fn add_mod(self, other: Self, m: Self) -> Self;
     }
 
@@ -47,15 +47,15 @@ mod ex01a {
 
     #[derive(Clone, Copy)]
     /// Length in meter
-    pub struct Meter(f64);
+    struct Meter(f64);
 
     #[derive(Clone, Copy)]
     /// Length in meter
-    pub struct Foot(f64);
+    struct Foot(f64);
 
     #[derive(Clone, Copy)]
     /// Length in miles
-    pub struct Mile(f64);
+    struct Mile(f64);
 
     // T may be defined as a work-around to get syntactic awareness with the IntelliJ plugin,
     // which doesn't support procedural macros at the moment. With this macro syntax, it
@@ -106,7 +106,7 @@ mod ex01a {
 mod ex02a {
     use trait_gen::trait_gen;
 
-    pub trait AddMod {
+    trait AddMod {
         fn add_mod(self, other: Self, m: Self) -> Self;
     }
 
@@ -132,7 +132,7 @@ mod ex02a {
 mod ex03a {
     use trait_gen::trait_gen;
 
-    pub trait ToU64 {
+    trait ToU64 {
         fn into_u64(self) -> u64;
     }
 
@@ -188,15 +188,15 @@ mod ex01b {
 
     #[derive(Clone, Copy)]
     /// Length in meter
-    pub struct Meter(f64);
+    struct Meter(f64);
 
     #[derive(Clone, Copy)]
     /// Length in meter
-    pub struct Foot(f64);
+    struct Foot(f64);
 
     #[derive(Clone, Copy)]
     /// Length in miles
-    pub struct Mile(f64);
+    struct Mile(f64);
 
     type T = Meter;
 
@@ -260,7 +260,7 @@ mod ex01b {
 mod ex02b {
     use trait_gen::trait_gen;
 
-    pub trait AddMod {
+    trait AddMod {
         fn add_mod(self, other: Self, m: Self) -> Self;
     }
 
@@ -286,7 +286,7 @@ mod ex02b {
 mod ex03b {
     use trait_gen::trait_gen;
 
-    pub trait ToU64 {
+    trait ToU64 {
         fn into_u64(self) -> u64;
     }
     
