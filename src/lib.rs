@@ -313,7 +313,7 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::visit_mut::VisitMut;
 
-const VERBOSE: bool = false;
+const VERBOSE: bool = true;
 
 #[derive(Debug)]
 struct Types {
@@ -329,19 +329,29 @@ impl Types {
     }
 }
 
-fn pathname(path: &Path) -> String {
+fn pathname_opt(path: &Path, args: bool) -> String {
     path.segments.iter()
         .map(|p| {
             let mut ident = p.ident.to_string();
-            match &p.arguments {
-                PathArguments::None => {}
-                PathArguments::AngleBracketed(_) => ident.push_str("<..>"),
-                PathArguments::Parenthesized(_) => ident.push_str("(..)"),
-            };
+            if args {
+                match &p.arguments {
+                    PathArguments::None => {}
+                    PathArguments::AngleBracketed(_) => ident.push_str("<..>"),
+                    PathArguments::Parenthesized(_) => ident.push_str("(..)"),
+                };
+            }
             ident
         })
         .collect::<Vec<_>>()
         .join("::")
+}
+
+fn ident(path: &Path) -> String {
+    pathname_opt(path, false)
+}
+
+fn pathname(path: &Path) -> String {
+    pathname_opt(path, true)
 }
 
 impl VisitMut for Types {
@@ -366,41 +376,45 @@ impl VisitMut for Types {
         self.enabled.pop();
     }
 
-    // fn visit_expr_call_mut(&mut self, node: &mut ExprCall) {
-    //     self.enabled.push(true);
-    //     syn::visit_mut::visit_expr_call_mut(self, node);
-    //     self.enabled.pop();
-    // }
-
-    fn visit_generics_mut(&mut self, i: &mut Generics) {
-        for t in i.params.iter() {
-            match &t {
-                GenericParam::Type(t) => {
-                    if t.ident == self.current_type {
-                        abort!(t.span(),
-                            "Type '{}' is reserved for the substitution.", self.current_type.to_string();
-                            help = "Use another identifier for this local generic type."
-                        );
-
-                        // replace the 'abort!' above with this once it is stable:
-                        //
-                        // t.span().unwrap()
-                        //     .error(format!("Type '{}' is reserved for the substitution.", self.current_type.to_string()))
-                        //     .help("Use another identifier for this local generic type.")
-                        //     .emit();
-                    }
-                }
-                _ => {}
-            }
-        }
+    fn visit_generics_mut(&mut self, node: &mut Generics) {
+        self.enabled.push(true);
+        syn::visit_mut::visit_generics_mut(self, node);
+        self.enabled.pop();
     }
+
+    // fn visit_generics_mut(&mut self, i: &mut Generics) {
+    //     for t in i.params.iter() {
+    //         match &t {
+    //             GenericParam::Type(t) => {
+    //                 if t.ident == self.current_type {
+    //                     abort!(t.span(),
+    //                         "Type '{}' is reserved for the substitution.", self.current_type.to_string();
+    //                         help = "Use another identifier for this local generic type."
+    //                     );
+    //
+    //                     // replace the 'abort!' above with this once it is stable:
+    //                     //
+    //                     // t.span().unwrap()
+    //                     //     .error(format!("Type '{}' is reserved for the substitution.", self.current_type.to_string()))
+    //                     //     .help("Use another identifier for this local generic type.")
+    //                     //     .emit();
+    //                 }
+    //             }
+    //             _ => {}
+    //         }
+    //     }
+    // }
 
     fn visit_path_mut(&mut self, path: &mut Path) {
         if self.substitution_enabled() {
             if VERBOSE { println!("path: {}", pathname(path)); }
-            if let Some(ident) = path.get_ident() {
+            // if let Some(ident) = path.get_ident() {
+            let ident = ident(path);
+            {
+                if VERBOSE { println!("- ident: {}", ident.to_string()); }
                 // if we have a simple identifier (no "::", no "<...>", no "(...)"), replaces it if it matches:
-                if ident == &self.current_type {
+                //if ident == &self.current_type {
+                if ident == self.current_type.to_string() {
                     for mut s in path.segments.iter_mut() {
                         let ident: &mut Ident = &mut (s.ident);
                         if ident == &self.current_type {
@@ -554,8 +568,14 @@ impl Parse for Types {
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
-    let ast: File = syn::parse(item).unwrap();
     let mut types = parse_macro_input!(args as Types);
+    if VERBOSE { println!("{}\ntrait_gen for {} -> {}",
+                          "=".repeat(80),
+                          types.current_type.to_string(),
+                          &types.new_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ")
+                 )}
+    if VERBOSE { println!("\n{}\n{}", item, "-".repeat(80)); }
+    let ast: File = syn::parse(item).unwrap();
     let mut output = TokenStream::new();
     while !types.new_types.is_empty() {
         let mut modified_ast = ast.clone();
@@ -568,5 +588,7 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     if types.current_defined {
         output.extend(TokenStream::from(quote!(#ast)));
     }
+    if VERBOSE { println!("end trait_gen for {}\n{}", types.current_type.to_string(), "-".repeat(80)); }
+    if VERBOSE { println!("{}\n{}", output, "=".repeat(80)); }
     output
 }

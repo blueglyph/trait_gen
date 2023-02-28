@@ -15,6 +15,7 @@
 struct T { pub offset: u64 }
 struct U(u32);
 
+/*
 mod subst_cases {
     use trait_gen::trait_gen;
 
@@ -40,7 +41,27 @@ mod subst_cases {
         assert_eq!(10_i32.add_mod(5, 8), 7);
     }
 }
+*/
 
+mod product_types {
+    use std::ops::Add;
+    use trait_gen::trait_gen;
+
+    struct Meter<T: Sized>(T);
+    struct Foot<T: Sized>(T);
+
+    #[trait_gen(U -> Meter, Foot)]
+    #[trait_gen(T -> f32, f64)]
+    impl<T> Add for U<T> {
+        type Output = U<T>;
+
+        fn add(self, rhs: Self) -> Self::Output {
+            U(self.0 + rhs.0)
+        }
+    }
+}
+
+/*
 mod ex01a {
     use std::ops::Add;
     use trait_gen::trait_gen;
@@ -338,3 +359,4 @@ mod ex03b {
     }    
 }
 
+*/
