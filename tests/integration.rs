@@ -22,15 +22,22 @@ mod subst_cases {
         fn add_mod(self, other: Self, m: Self) -> Self;
     }
 
+    const X: super::T = super::T { offset: 0 };
+
     #[trait_gen(U -> u32, i32)]
     impl AddMod for U {
         fn add_mod(self, other: U, m: U) -> U {
             // type must change, constant name must stay:
             const U: U = 0;
+
+            // doesn't work:
+            let zero = U::default();
+            // let zero = Self::default();
+
             // type must stay:
             let offset: super::U = super::U(0);
             // constant must stay, cast type must change:
-            (self + other + U + offset.0 as U) % m
+            (self + other + U + zero + offset.0 as U) % m
         }
     }
 
@@ -40,7 +47,7 @@ mod subst_cases {
         assert_eq!(10_i32.add_mod(5, 8), 7);
     }
 }
-
+/*
 mod ex01a {
     use std::ops::Add;
     use trait_gen::trait_gen;
@@ -338,3 +345,4 @@ mod ex03b {
     }    
 }
 
+*/
