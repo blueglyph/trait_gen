@@ -397,18 +397,14 @@ impl VisitMut for Types {
 
     fn visit_path_mut(&mut self, path: &mut Path) {
         if self.substitution_enabled() {
-            if VERBOSE { println!("path: {}", pathname(path)); }
-            if let Some(ident) = path.get_ident() {
-                // if we have a simple identifier (no "::", no "<...>", no "(...)"), replaces it if it matches:
-                if ident == &self.current_type {
-                    for mut s in path.segments.iter_mut() {
-                        let ident: &mut Ident = &mut (s.ident);
-                        if ident == &self.current_type {
-                            s.ident = self.new_types.first().unwrap().clone();
-                            break;
-                        }
-                    }
+            let pathname = pathname(path);
+            if let Some(segment) = path.segments.first_mut() {
+                if VERBOSE { println!("path: {} -> first_ident = {}", pathname, segment.ident.to_string()); }
+                if segment.ident == self.current_type {
+                    segment.ident = self.new_types.first().unwrap().clone();
                 }
+            } else {
+                if VERBOSE { println!("path: {}", pathname); }
             }
         } else {
             if VERBOSE { println!("disabled path: {}", pathname(path)); }
