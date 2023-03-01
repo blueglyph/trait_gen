@@ -22,18 +22,13 @@ mod subst_cases {
         fn add_mod(self, other: Self, m: Self) -> Self;
     }
 
-    const X: super::T = super::T { offset: 0 };
-
     #[trait_gen(U -> u32, i32)]
     impl AddMod for U {
         fn add_mod(self, other: U, m: U) -> U {
-            // type must change, constant name must stay:
+            // constant name must stay, type must change:
             const U: U = 0;
-
-            // doesn't work:
+            // type must change:
             let zero = U::default();
-            // let zero = Self::default();
-
             // type must stay:
             let offset: super::U = super::U(0);
             // constant must stay, cast type must change:
@@ -47,7 +42,7 @@ mod subst_cases {
         assert_eq!(10_i32.add_mod(5, 8), 7);
     }
 }
-/*
+
 mod ex01a {
     use std::ops::Add;
     use trait_gen::trait_gen;
@@ -75,8 +70,9 @@ mod ex01a {
         type Output = T;
 
         fn add(self, rhs: T) -> Self::Output {
-            const T2: f64 = 0.0;
-            Self(self.0 + rhs.0 + T2)
+            const T: f64 = 0.0;
+            // constructor must change:
+            T(self.0 + rhs.0 + T)
         }
     }
 
@@ -147,14 +143,10 @@ mod ex03a {
     impl ToU64 for T {
         /// Transforms the value into a `u64` type
         fn into_u64(self) -> u64 {
-            // Type paths with a 'T' segment are fine, they won't be substituted:
+            // type and constructor must not change because it doesn't start with 'T':
             let x: super::T = super::T { offset: 0 };
-
-            // Constant names with the same name as the substituted type are fine:
-            // (same for variable and functions, though they shouldn't have the same case)
-            const T2: u64 = 0;
-
-            self as u64 + T2 + x.offset
+            const T: u64 = 0;
+            self as u64 + T + x.offset
         }
     }
 
@@ -344,5 +336,3 @@ mod ex03b {
         assert_eq!(h.into_u64(), 10_u64);
     }    
 }
-
-*/
