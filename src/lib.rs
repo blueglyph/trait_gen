@@ -7,7 +7,7 @@
 //! This library provides attributes to generate the trait implementations for several
 //! types, without the need for custom declarative macros.
 //!
-//! In the example below, the `Add` trait is implemented for the types `Meter`, `Foot` and `Mile`.
+//! In the example below, the `Add` trait is implemented for `Meter`, `Foot` and `Mile`.
 //! The `T` type identifier is used to mark where the substitution takes place; it can be an
 //! existing type or alias but it's not mandatory.
 //!
@@ -77,10 +77,13 @@
 //!     // ...
 //! }
 //! ```
-//!
-//! This attribute successively substitutes the first identifier of the list (`T`), which is used as a
+//! This attribute successively substitutes the `T` type parameter, which is used as a
 //! type in the attached source code, with each of the following types (`type1`, `type2`, `type3`)
-//! to generate all the variations.
+//! to generate all the implementations.
+//!
+//! All paths beginning with `T` in the code have this segment replaced. For example,
+//! `T::default()` generates `type1::default()`, `type2::default()` and so on, but
+//! `super::T` is unchanged.
 //!
 //! The code must of course be compatible with all the types, or the compiler will trigger the
 //! relevant errors. For example `#[trait_gen(T -> u64, f64)]` cannot be used with `Self(0)` because
@@ -120,9 +123,10 @@
 //! difference, except the order of the compiler messages if there are warnings or errors in the
 //! code - that's the only reason we mention it here._
 //!
-//! The short format can be used when there is little risk of confusion, like in the example below.
-//! `Meter` is not used in the other type implementations, so using an alias is unnecessary. The
-//! type to replace in the code must be in first position after the attribute:
+//! The short format can be used when there is no risk of confusion, like in the example below.
+//! All the `Meter` instances must change, it is unlikely to be mixed with `Foot` and `Mile`, so
+//! using an alias is unnecessary. The type to replace in the code must be in first position in
+//! the parameter list:
 //!
 //! ```rust
 //! use std::ops::Add;
@@ -142,8 +146,8 @@
 //! }
 //! ```
 //!
-//! In some situations, one of the implemented types happens to be also required in all the
-//! implementations. Consider the following example:
+//! In some situations, one of the implemented types happens to be required in all the
+//! implementations. Consider the following example, in which the return type is always `u64`:
 //!
 //! ```rust,compile_fail
 //! # use trait_gen::trait_gen;
@@ -159,7 +163,7 @@
 //! }
 //! ```
 //!
-//! This will not work because the return type of `into_u64()` will be replaced too! To prevent it,
+//! This doesn't work because the return type of `into_u64()` will be replaced too! To prevent it,
 //! an alias must be used (or the other attribute format). This works:
 //!
 //! ```rust
@@ -185,13 +189,16 @@
 //! _rust-analyzer_ supports procedural macros for code awareness, so everything should be fine for
 //! editors based on this Language Server Protocol implementation. Unfortunately this isn't the
 //! case of all IDEs yet, which removes some benefits of using this macro. For instance, the
-//! _IntelliJ_ plugin won't be able to provide much support while typing the code for an unknown
-//! `T` type, nor will it be able to look for the definition of the implemented methods or even
-//! suggest them when writing code.
+//! _IntelliJ_ plugin is not able to provide much support while typing the code for an unknown
+//! `T` type, nor can it find the definition of the implemented methods, or even
+//! suggest them.
 //!
-//! Two work-arounds can help until the support for procedural macros is more widely available:
+//! Here are two work-arounds that help when typing the trait implementation. However, they can't
+//! do much about code awareness when the trait methods are used later. Hopefully the remaining
+//! IDEs will provide more support for procedural macros soon.
 //!
-//! * Defining an alias for the identifier used in the attribute:
+//! * Defining a type alias for the identifier used in the attribute doesn't change the produced
+//! code, but it allows the editor to understand it without expanding the macro:
 //!
 //!   ```rust
 //!     # use trait_gen::trait_gen;
@@ -209,10 +216,8 @@
 //!     }
 //!   ```
 //!
-//!   Defining `T` doesn't change the produced code, but it allows the editor to understand it without
-//!   expanding the macro.
-//!
-//! * Implementing for an existing type, and using it as the first identifier:
+//! * Implementing for an existing type then using it as the type parameter is another possibility,
+//! but it may look more confusing so use it with caution:
 //!
 //!   ```rust
 //!     # use trait_gen::trait_gen;
@@ -229,16 +234,13 @@
 //!     }
 //!   ```
 //!
-//!   This is somewhat more confusing to read, and doesn't work if `u32` must remain in all the
-//!   variations, like the `u64` it the previous example just above.
-//!
 //! <br/>
 //!
 //! ## Limitations
 //!
-//! * Rust doesn't allow alias constructors, like `T(1.0)` in the code below. When it is needed,
-//!   `Self` or a trait associated type is usually equivalent: here, `Self(1.0)`. In the rare event
-//!   that no substitute is available, consider using the `Default` trait or creating a specific one.
+//! * Rust doesn't allow alias constructors with the "legacy" format. `Self` or a trait associated
+//! type is usually equivalent - here, `Self(1.0)`. If there is no alternative, consider using
+//! the `Default` trait or creating a specific one.
 //!
 //!   ```rust,compile_fail
 //!   # use trait_gen::trait_gen;
@@ -256,7 +258,7 @@
 //!   }
 //!   ```
 //!
-//!   The other attribute format doesn't suffer from the same problem:
+//!   The other attribute format allows the substitution:
 //!
 //!   ```rust
 //!   # use trait_gen::trait_gen;
@@ -267,13 +269,13 @@
 //!   #[trait_gen(T -> Meter, Foot, Mile)]
 //!   impl Neutral for T {
 //!       fn mul_neutral(&self) -> Self {
-//!           T(1.0)  // <== OK, always substituted with either Meter, Foot or Mile
+//!           T(1.0)  // <== always substituted with either Meter, Foot or Mile
 //!       }
 //!   }
 //!   ```
 //!
-//! * The macro doesn't handle scopes, so it doesn't support any type declaration with the same name
-//! as the type that must be substituted. This, for instance, fails to compile:
+//! * The attribute doesn't handle scopes, so it doesn't support any type declaration with the same name
+//! as the type that must be substituted, including generics. This, for instance, fails to compile:
 //!
 //!   ```rust,compile_fail
 //!   use num::Num;
@@ -297,11 +299,10 @@
 //!   }
 //!   ```
 //!
-//! * If the `T` identifier above is only a part of the type path, then it is fine. For example,
-//! `super::T`, `T<u64>` or `T(u64)` will not be replaced when using `#[trait_gen(T, ...)]`. But on the other
-//! hand, those type paths cannot be substituted either (yet) - you cannot use
-//! `#[trait_gen(T<u64>, ...)]` or `#[trait_gen(super::T, ...)]`. This can be worked around by using
-//! type aliases or a `use` clause.
+//! * Substitutions are limited to single segments, like `Meter`. They don't support multiple
+//! segments or arguments, like `super::Meter` or `Meter<f64>`. The same applies to the attribute
+//! parameter: `T -> ...` is allowed, but not `super::T -> ...`. This can be worked around by
+//! using a type alias or a `use` clause.
 
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
@@ -441,7 +442,7 @@ impl Parse for Types {
 
 /// Generates the attached trait implementation for all the types given in parameter.
 ///
-/// In the example below, the `Add` trait is implemented for the types `Meter`, `Foot` and `Mile`. The
+/// In the example below, the `Add` trait is implemented for `Meter`, `Foot` and `Mile`. The
 /// `T` type identifier is used to mark where the substitution takes place; it can be an existing type
 /// or alias but it's not mandatory.
 ///
@@ -458,7 +459,7 @@ impl Parse for Types {
 ///     type Output = T;
 ///
 ///     fn add(self, rhs: T) -> Self::Output {
-///         Self(self.0 + rhs.0)
+///         T(self.0 + rhs.0)
 ///     }
 /// }
 /// ```
@@ -467,8 +468,10 @@ impl Parse for Types {
 ///
 /// ## Alternative format
 ///
-/// The attribute supports a shorter format which was used when there is little risk of confusion
-/// about the type to be substituted in the attached code.
+/// The short format can be used when there is no risk of confusion, like in the example below.
+/// All the `Meter` instances must change, it is unlikely to be mixed with `Foot` and `Mile`, so
+/// using an alias is unnecessary. The type to replace in the code must be in first position in
+/// the parameter list:
 ///
 /// ```rust
 /// use std::ops::Add;
@@ -495,9 +498,9 @@ impl Parse for Types {
 ///
 /// ## Limitations
 ///
-/// * Rust doesn't allow alias constructors, like `T(1.0)` in the code below. When it is needed,
-///   `Self` or a trait associated type is usually equivalent: here, `Self(1.0)`. In the rare event
-///   that no substitute is available, consider using the `Default` trait or creating a specific one.
+/// * Rust doesn't allow alias constructors with the "legacy" format. `Self` or a trait associated
+/// type is usually equivalent - here, `Self(1.0)`. If there is no alternative, consider using
+/// the `Default` trait or creating a specific one.
 ///
 ///   ```rust,compile_fail
 ///   # use trait_gen::trait_gen;
@@ -513,20 +516,19 @@ impl Parse for Types {
 ///   }
 ///   ```
 ///
-///   The other attribute format suffers from the same problem, because of a limitation in the current
-///   version:
+///   The other attribute format allows the substitution:
 ///
 ///   ```rust,compile_fail
 ///   #[trait_gen(T -> Meter, Foot, Mile)]
 ///   impl Neutral for T {
 ///       fn mul_neutral(&self) -> Self {
-///           T(1.0)  // <== ERROR, use Self(1.0) instead
+///           T(1.0)  // <== replaced
 ///       }
 ///   }
 ///   ```
 ///
 /// * The macro doesn't handle scopes, so it doesn't support any type declaration with the same name
-/// as the type that must be substituted. This, for instance, fails to compile:
+/// as the type that must be substituted, including generics. This, for instance, fails to compile:
 ///
 ///   ```rust,compile_fail
 ///   #[trait_gen(T -> u64, i64, u32, i32)]
@@ -542,11 +544,10 @@ impl Parse for Types {
 ///   }
 ///   ```
 ///
-/// * If the `T` identifier above is only a part of the type path, then it is fine. For example,
-/// `super::T`, `T<u64>` or `T(u64)` will not be replaced when using `#[trait_gen(T, ...)]`. But on the other
-/// hand, those type paths cannot be substituted either (yet) - you cannot use
-/// `#[trait_gen(T<u64>, ...)]` or `#[trait_gen(super::T, ...)]`. This can be worked around by using
-/// type aliases or a `use` clause.
+/// * Substitutions are limited to single segments, like `Meter`. They don't support multiple
+/// segments or arguments, like `super::Meter` or `Meter<f64>`. The same applies to the attribute
+/// parameter: `T -> ...` is allowed, but not `super::T -> ...`. This can be worked around by
+/// using a type alias or a `use` clause.
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {

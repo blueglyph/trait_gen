@@ -1,7 +1,7 @@
 # 0.1.4 (2023-03-01)
 
 - attribute type parameter can be used as constructor with the `T ->` form
-- all paths starting with the type parameter are replaced: `T::default()`
+- all paths starting with the type parameter are replaced, for example `T::default()` has `T` replaced with the `T ->` form (before, the whole path had to match)
 
 # 0.1.3 (2023-02-25)
 

@@ -1,7 +1,7 @@
 [package]
 name = "trait-gen"
 description = "Trait implementation generator macro"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 authors = ["Redglyph"]
 categories = ["rust-patterns"]
@@ -22,4 +22,3 @@ syn = { version = "1", features = ["full", "visit-mut"] }
 proc-macro-error = "1"
 
 [dev-dependencies]
-#num = "0"
