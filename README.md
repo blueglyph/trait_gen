@@ -5,6 +5,22 @@
 [![build status](https://github.com/blueglyph/trait_gen/actions/workflows/master.yml/badge.svg)](https://github.com/blueglyph/trait_gen/actions)
 [![crate](https://img.shields.io/crates/l/trait_gen.svg)](https://github.com/blueglyph/trait_gen/blob/master/LICENSE-MIT)
 
+<hr/>
+
+<!-- TOC -->
+* [trait-gen](#trait-gen)
+* [The trait_gen attribute](#the-traitgen-attribute)
+  * [Examples](#examples)
+  * [Alternative format](#alternative-format)
+  * [Code awareness issues](#code-awareness-issues)
+  * [Limitations](#limitations)
+* [Compatibility](#compatibility)
+* [Releases](#releases)
+* [License](#license)
+<!-- TOC -->
+
+<hr/>
+
 This library provides attributes to generate the trait implementations for several
 types, without the need for custom declarative macros.
 
@@ -58,7 +74,7 @@ although this is an ongoing work (see [tracking issue](https://github.com/intell
 There are also a few limitations of the current version described in the [Limitations](#limitations)
 section.
 
-## The trait_gen attribute
+# The trait_gen attribute
 
 ```rust
 #[trait_gen(T -> type1, type2, type3)]
@@ -78,6 +94,66 @@ All paths beginning with `T` in the code have this segment replaced. For example
 The code must of course be compatible with all the types, or the compiler will trigger the
 relevant errors. For example `#[trait_gen(T -> u64, f64)]` cannot be used with `Self(0)` because
 `0` is not a valid floating-point literal.
+
+## Examples
+
+Here are a few examples of the substitutions that are supported.
+
+```rust
+#[trait_gen(U -> u32, i32)]
+impl AddMod for U {
+    fn add_mod(self, other: U, m: U) -> U {
+        const U: U = 0;
+        let zero = U::default();
+        let offset: super::U = super::U(0);
+        (self + other + U + zero + offset.0 as U) % m
+    }
+}
+```
+
+- is expanded into:
+
+    ```rust
+    impl AddMod for u32 {
+        fn add_mod(self, other: u32, m: u32) -> u32 {
+            const U: u32 = 0;
+            let zero = u32::default();
+            let offset: super::U = super::U(0);
+            (self + other + U + zero + offset.0 as u32) % m
+        }
+    }
+    ```
+  (and the same for `i32`)
+
+This code, with `struct Meter(f64)`, `struct Foot(f64)` and so on:
+
+```rust
+#[trait_gen(T -> Meter, Foot, Mile)]
+impl Add for T {
+    type Output = T;
+
+    fn add(self, rhs: T) -> Self::Output {
+        const T: f64 = 0.0;
+        T(self.0 + rhs.0 + T)
+    }
+}
+```
+
+- is expanded into:
+
+    ```rust
+    impl Add for Meter {
+        type Output = Meter;
+  
+        fn add(self, rhs: Meter) -> Self::Output {
+            const T: f64 = 0.0;
+            Meter(self.0 + rhs.0 + T)
+        }
+    }
+    ```
+  (and the same for `Foot` and `Mile`)
+
+The same expansion can be performed on tuples or other struct types.
 
 ## Alternative format
 
@@ -156,6 +232,14 @@ impl ToU64 for T {
         self as u64
     }
 }
+```
+
+That is how the other format came to be, by getting rid of the type alias and allowing a "local"
+type parameter:
+
+```rust
+#[trait_gen(T -> u64, i64, u32, i32, u16, i16, u8, i8)]
+fn ToU64 for T { /* ... */ }
 ```
 
 ## Code awareness issues
@@ -264,14 +348,14 @@ segments or arguments, like `super::Meter` or `Meter<f64>`. The same applies to 
 parameter: `T -> ...` is allowed, but not `super::T -> ...`. This can be worked around by 
 using a type alias or a `use` clause.
 
-## Compatibility
+# Compatibility
 
 The `trait-gen` crate is tested for rustc 1.67.1 and greater, on Windows 64-bit and Linux 64/32-bit platforms. There shouldn't be any problem with older versions.
 
-## Releases
+# Releases
 
 [RELEASES.md](RELEASES.md) keeps a log of all the releases.
 
-## License
+# License
 
 Licensed under [MIT license](https://choosealicense.com/licenses/mit/).

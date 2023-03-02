@@ -367,12 +367,6 @@ impl VisitMut for Types {
         self.enabled.pop();
     }
 
-    // fn visit_expr_call_mut(&mut self, node: &mut ExprCall) {
-    //     self.enabled.push(true);
-    //     syn::visit_mut::visit_expr_call_mut(self, node);
-    //     self.enabled.pop();
-    // }
-
     fn visit_generics_mut(&mut self, i: &mut Generics) {
         for t in i.params.iter() {
             match &t {
