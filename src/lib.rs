@@ -545,8 +545,14 @@ impl Parse for Types {
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
-    let ast: File = syn::parse(item).unwrap();
     let mut types = parse_macro_input!(args as Types);
+    if VERBOSE { println!("{}\ntrait_gen for {} -> {}",
+                          "=".repeat(80),
+                          types.current_type.to_string(),
+                          &types.new_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ")
+                 )}
+    if VERBOSE { println!("\n{}\n{}", item, "-".repeat(80)); }
+    let ast: File = syn::parse(item).unwrap();
     let mut output = TokenStream::new();
     while !types.new_types.is_empty() {
         let mut modified_ast = ast.clone();
@@ -559,5 +565,7 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     if types.current_defined {
         output.extend(TokenStream::from(quote!(#ast)));
     }
+    if VERBOSE { println!("end trait_gen for {}\n{}", types.current_type.to_string(), "-".repeat(80)); }
+    if VERBOSE { println!("{}\n{}", output, "=".repeat(80)); }
     output
 }
