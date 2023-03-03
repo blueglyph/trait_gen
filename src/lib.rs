@@ -388,7 +388,10 @@ impl VisitMut for Types {
                 _ => {}
             }
         }
+        syn::visit_mut::visit_generics_mut(self, i);
     }
+
+
 
     fn visit_path_mut(&mut self, path: &mut Path) {
         if self.substitution_enabled() {
@@ -403,8 +406,8 @@ impl VisitMut for Types {
             }
         } else {
             if VERBOSE { println!("disabled path: {}", pathname(path)); }
-            syn::visit_mut::visit_path_mut(self, path);
         }
+        syn::visit_mut::visit_path_mut(self, path);
     }
 
     fn visit_type_path_mut(&mut self, typepath: &mut TypePath) {

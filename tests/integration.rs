@@ -43,6 +43,62 @@ mod subst_cases {
     }
 }
 
+mod type_args {
+    use trait_gen::trait_gen;
+
+    struct Meter<U>(U);
+
+    trait GetLength<T> {
+        fn length(&self) -> T;
+    }
+
+    #[trait_gen(U -> f32, f64)]
+    impl GetLength<U> for Meter<U> {
+        fn length(&self) -> U {
+            self.0 as U
+        }
+    }
+
+    #[test]
+    fn test() {
+        let m_32 = Meter(1.0_f32);
+        let m_64 = Meter(2.0);
+        assert_eq!(m_32.length(), 1.0_f32);
+        assert_eq!(m_64.length(), 2.0_f64);
+    }
+}
+
+mod cross_product {
+    use trait_gen::trait_gen;
+
+    struct Meter<U>(U);
+    struct Foot<U>(U);
+
+    trait GetLength<T> {
+        fn length(&self) -> T;
+    }
+
+    #[trait_gen(T -> Meter, Foot)]
+    #[trait_gen(U -> f32, f64)]
+    impl GetLength<U> for T<U> {
+        fn length(&self) -> U {
+            self.0 as U
+        }
+    }
+
+    #[test]
+    fn test() {
+        let m_32 = Meter(1.0_f32);
+        let m_64 = Meter(2.0);
+        let f_32 = Foot(3.0_f32);
+        let f_64 = Foot(4.0);
+        assert_eq!(m_32.length(), 1.0_f32);
+        assert_eq!(m_64.length(), 2.0_f64);
+        assert_eq!(f_32.length(), 3.0_f32);
+        assert_eq!(f_64.length(), 4.0_f64);
+    }
+}
+
 mod ex01a {
     use std::ops::Add;
     use trait_gen::trait_gen;
@@ -52,7 +108,7 @@ mod ex01a {
     struct Meter(f64);
 
     #[derive(Clone, Copy)]
-    /// Length in meter
+    /// Length in foot
     struct Foot(f64);
 
     #[derive(Clone, Copy)]
@@ -190,7 +246,7 @@ mod ex01b {
     struct Meter(f64);
 
     #[derive(Clone, Copy)]
-    /// Length in meter
+    /// Length in foot
     struct Foot(f64);
 
     #[derive(Clone, Copy)]

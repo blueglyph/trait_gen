@@ -153,7 +153,38 @@ impl Add for T {
     ```
   (and the same for `Foot` and `Mile`)
 
-The same expansion can be performed on tuples or other struct types.
+  The same expansion can be performed on tuples or other struct types.
+
+This example shows the use of type arguments in generic traits:
+
+```rust
+struct Meter<U>(U);
+struct Foot<U>(U);
+
+trait GetLength<T> {
+    fn length(&self) -> T;
+}
+
+#[trait_gen(U -> f32, f64)]
+impl GetLength<U> for Meter<U> {
+    fn length(&self) -> U {
+        self.0 as U
+    }
+}
+```
+
+This attribute can be combined with another one to create a cross-product generator, producing 4 implementations:
+
+```rust
+#[trait_gen(T -> Meter, Foot)]
+#[trait_gen(U -> f32, f64)]
+impl GetLength<U> for T<U> {
+    fn length(&self) -> U {
+        self.0 as U
+    }
+}
+```
+
 
 ## Alternative format
 
