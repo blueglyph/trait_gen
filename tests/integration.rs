@@ -73,10 +73,10 @@ mod subst_cases {
     }
 }
 
-pub mod type_args {
+mod type_args {
     use trait_gen::trait_gen;
 
-    pub trait Number<X, T> { fn fake(x: X) -> T; }
+    trait Number<X, T> { fn fake(x: X) -> T; }
 
     #[trait_gen(T -> f32, f64)]
     // all trait arguments must change:
@@ -85,9 +85,9 @@ pub mod type_args {
         fn fake(_x: T) -> T { 1.0 as T }
     }
 
-    pub struct Meter<U>(U);
+    struct Meter<U>(U);
 
-    pub trait GetLength<T> {
+    trait GetLength<T> {
         fn length(&self) -> T;
     }
 
