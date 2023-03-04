@@ -43,19 +43,30 @@ mod subst_cases {
     }
 }
 
-mod type_args {
+pub mod type_args {
     use trait_gen::trait_gen;
 
-    struct Meter<U>(U);
+    pub trait Number<X, T> { fn fake(x: X) -> T; }
 
-    trait GetLength<T> {
+    #[trait_gen(T -> f32, f64)]
+    // all trait arguments must change:
+    impl Number<T, T> for T {
+        /// my fake doc
+        fn fake(_x: T) -> T { 1.0 as T }
+    }
+
+    pub struct Meter<U>(U);
+
+    pub trait GetLength<T> {
         fn length(&self) -> T;
     }
 
     #[trait_gen(U -> f32, f64)]
     impl GetLength<U> for Meter<U> {
         fn length(&self) -> U {
-            self.0 as U
+            // generic ident must not collide, but bound arguments must change:
+            fn identity<T: Number<U, U>>(x: T) -> T { x }
+            identity(self.0 as U)
         }
     }
 
