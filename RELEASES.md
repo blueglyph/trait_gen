@@ -1,3 +1,27 @@
+# 0.1.5 (2023-03-04)
+
+- attribute type parameter can be used in simple type arguments, which can be used in cross-product generation:
+    ```rust
+    #[trait_gen(T -> Meter, Foot)]
+    #[trait_gen(U -> f32, f64)]
+    impl GetLength<U> for T<U> {
+        fn length(&self) -> U {
+            self.0 as U
+        }
+    }
+    ```
+- substitutes the real type for `${T}` in docs, expression string literals and macros:
+    ```rust
+    #[trait_gen(T -> u32, u64)]
+    impl Lit for T {
+        /// Produces a string representation for ${T}
+        fn text(&self) -> String {
+            call("${T}");
+            format!("${T}: {}", self)
+        }
+    }
+    ```
+
 # 0.1.4 (2023-03-01)
 
 - attribute type parameter can be used as constructor with the `T ->` form

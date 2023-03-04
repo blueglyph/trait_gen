@@ -185,6 +185,25 @@ impl GetLength<U> for T<U> {
 }
 ```
 
+The actual type name replaces any occurrence of the parameter, with the `${T}` format, in doc comments, macros and string literals:
+
+```rust
+# use trait_gen::trait_gen;
+trait Trait {
+    fn text(&self) -> String;
+}
+#[trait_gen(T -> u32, u64)]
+impl Trait for T {
+    /// Produces a string representation for ${T}
+    fn text(&self) -> String {
+        call("${T}");
+        format!("${T}: {}", self)
+    }
+}
+
+assert_eq!(1_u32.text(), "u32: 1");
+assert_eq!(2_u64.text(), "u64: 2");
+```
 
 ## Alternative format
 
