@@ -10,6 +10,36 @@
 // or
 //     #[trait_gen(Meter -> Meter, Foot, Mile)]
 // -----------------------------------------------------------------------------
+mod literals {
+    use trait_gen::trait_gen;
+    static mut CALLS: Vec<String> = Vec::new();
+
+    trait Lit {
+        fn text(&self) -> String;
+    }
+
+    fn call(s: &str) {
+        unsafe { CALLS.push(s.to_string()); }
+    }
+
+    #[trait_gen(T -> u32, u64)]
+    impl Lit for T {
+        /// Produces a string representation for ${T}
+        fn text(&self) -> String {
+            call("${T}");
+            format!("${T}: {}", self)
+        }
+    }
+
+    #[test]
+    fn test() {
+        let s_32 = 10_u32.text();
+        let s_64 = 20_u64.text();
+        assert_eq!(s_32, "u32: 10");
+        assert_eq!(s_64, "u64: 20");
+        assert_eq!(unsafe { CALLS.join(",") }, "u32,u64");
+    }
+}
 
 // Fake types for the tests
 struct T { pub offset: u64 }
@@ -63,6 +93,7 @@ pub mod type_args {
 
     #[trait_gen(U -> f32, f64)]
     impl GetLength<U> for Meter<U> {
+        #[doc = "length for type `Meter<${U}>`"]
         fn length(&self) -> U {
             // generic ident must not collide, but bound arguments must change:
             fn identity<T: Number<U, U>>(x: T) -> T { x }

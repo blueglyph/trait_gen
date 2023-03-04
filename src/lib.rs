@@ -307,8 +307,8 @@
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use proc_macro_error::{proc_macro_error, abort};
-use quote::quote;
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr};
+use quote::{quote, ToTokens};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -343,6 +343,16 @@ fn pathname(path: &Path) -> String {
         })
         .collect::<Vec<_>>()
         .join("::")
+}
+
+/// Replaces the pattern `pat` with `repl` in `string`. Returns `Some(resulting string)` if
+/// the string changed, None if there was no replacement.
+fn replace_str(string: &str, pat: &str, repl: &str) -> Option<String> {
+    if string.contains(pat) {
+        Some(string.replace(pat, repl))
+    } else {
+        None
+    }
 }
 
 impl VisitMut for Types {
@@ -391,7 +401,21 @@ impl VisitMut for Types {
         syn::visit_mut::visit_generics_mut(self, i);
     }
 
-
+    fn visit_expr_lit_mut(&mut self, node: &mut ExprLit) {
+        if let Lit::Str(lit) = &node.lit {
+            // substitutes "${T}" in expression literals (not used in macros, see visit_macro_mut)
+            if let Some(ts_str) = replace_str(
+                &lit.to_token_stream().to_string(),
+                &format!("${{{}}}", self.current_type.to_string()),
+                &self.new_types.first().unwrap().to_string())
+            {
+                let new_lit: LitStr = parse_str(&ts_str).expect(&format!("parsing LitStr failed: {}", ts_str));
+                node.lit = Lit::Str(new_lit);
+            } else {
+                syn::visit_mut::visit_expr_lit_mut(self, node);
+            }
+        }
+    }
 
     fn visit_path_mut(&mut self, path: &mut Path) {
         if self.substitution_enabled() {
@@ -416,6 +440,20 @@ impl VisitMut for Types {
         if VERBOSE { println!("typepath: {}", pathname(path)); }
         syn::visit_mut::visit_type_path_mut(self, typepath);
         self.enabled.pop();
+    }
+
+    fn visit_macro_mut(&mut self, node: &mut Macro) {
+        // substitutes "${T}" in macros
+        if let Some(ts_str) = replace_str(
+            &node.tokens.to_string(),
+            &format!("${{{}}}", self.current_type.to_string()),
+            &self.new_types.first().unwrap().to_string())
+        {
+            let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing Macro failed: {}", ts_str));
+            node.tokens = new_ts;
+        } else {
+            syn::visit_mut::visit_macro_mut(self, node);
+        }
     }
 }
 
