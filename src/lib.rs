@@ -89,6 +89,26 @@
 //! relevant errors. For example `#[trait_gen(T -> u64, f64)]` cannot be used with `Self(0)` because
 //! `0` is not a valid floating-point literal.
 //!
+//! The actual type name replaces any occurrence of the parameter with the `${T}` format in doc
+//! comments, macros and string literals:
+//!
+//! ```rust
+//! # use trait_gen::trait_gen;
+//! trait Trait {
+//!     fn text(&self) -> String;
+//! }
+//! #[trait_gen(T -> u32, u64)]
+//! impl Trait for T {
+//!     fn text(&self) -> String {
+//!         let ty = "${T}".to_string();
+//!         format!("{}: {}", ty, self)
+//!     }
+//! }
+//!
+//! assert_eq!(1_u32.text(), "u32: 1");
+//! assert_eq!(2_u64.text(), "u64: 2");
+//! ```
+//!
 //! <br/>
 //!
 //! ## Alternative format
@@ -308,7 +328,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -455,8 +475,24 @@ impl VisitMut for Types {
             syn::visit_mut::visit_macro_mut(self, node);
         }
     }
-}
 
+    fn visit_attribute_mut(&mut self, node: &mut Attribute) {
+        if let Some(PathSegment { ident, .. }) = node.path.segments.first() {
+            if ident.to_string() == "doc" {
+                if let Some(ts_str) = replace_str(
+                    &node.tokens.to_string(),
+                    &format!("${{{}}}", self.current_type.to_string()),
+                    &self.new_types.first().unwrap().to_string())
+                {
+                    let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing attribute failed: {}", ts_str));
+                    node.tokens = new_ts;
+                }
+                return
+            }
+        }
+        syn::visit_mut::visit_attribute_mut(self, node);
+    }
+}
 
 impl Parse for Types {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
