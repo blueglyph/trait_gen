@@ -110,6 +110,31 @@ mod type_args {
     }
 }
 
+mod type_fn_args {
+    use trait_gen::trait_gen;
+
+    trait Transformer<T: Copy> {
+        fn transform<F: Fn(T) -> T>(&self, f: F) -> Vec<T>;
+    }
+
+    #[trait_gen(T -> i64, f64)]
+    impl Transformer<T> for Vec<T> {
+        fn transform<F: Fn(T) -> T>(&self, f: F) -> Vec<T> {
+            self.iter().map(|&x| f(x)).collect()
+        }
+    }
+
+    #[test]
+    fn test() {
+        let vi = vec![1_i64, 2, 3, 4, 5];
+        let vf = vec![1.0_f64, 4.0, 9.0, 16.0, 25.0];
+        let transformed_vi = vi.transform(|x| x * x);
+        let transformed_vf = vf.transform(|x| x.sqrt());
+        assert_eq!(transformed_vi, [1, 4, 9, 16, 25]);
+        assert_eq!(transformed_vf, [1.0, 2.0, 3.0, 4.0, 5.0]);
+    }
+}
+
 mod cross_product {
     use trait_gen::trait_gen;
 
