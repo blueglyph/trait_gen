@@ -99,6 +99,7 @@
 //! }
 //! #[trait_gen(T -> u32, u64)]
 //! impl Trait for T {
+//!     /// Produces a string representation for ${T}
 //!     fn text(&self) -> String {
 //!         let ty = "${T}".to_string();
 //!         format!("{}: {}", ty, self)
