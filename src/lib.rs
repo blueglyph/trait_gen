@@ -380,6 +380,7 @@ trait NodeMatch {
 }
 
 impl NodeMatch for GenericArgument {
+    /// Compares both generic arguments, disregarding lifetime parameter names
     fn match_prefix(&self, other: &Self) -> bool {
         if let GenericArgument::Lifetime(_) = self {
             // ignoring the actual lifetime ident
@@ -524,11 +525,12 @@ impl VisitMut for Types {
                 }
             } else {
                 if VERBOSE { println!("path: {} mismatch", pathname); }
+                syn::visit_mut::visit_path_mut(self, path);
             }
         } else {
             if VERBOSE { println!("disabled path: {}", pathname(path)); }
+            syn::visit_mut::visit_path_mut(self, path);
         }
-        syn::visit_mut::visit_path_mut(self, path);
     }
 
     fn visit_type_path_mut(&mut self, typepath: &mut TypePath) {
