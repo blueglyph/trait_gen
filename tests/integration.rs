@@ -14,7 +14,7 @@
 struct Meter<T>(T);
 struct Foot<T>(T);
 
-mod path_cases {
+mod path_cases_01 {
     use trait_gen::trait_gen;
     use std::ops::{Add, Neg};
 
@@ -55,6 +55,70 @@ mod path_cases {
         assert_eq!(c.0, 5.0);
         let d = -c;
         assert_eq!(d.0, -5.0);
+    }
+}
+
+mod path_cases_02 {
+    use trait_gen::trait_gen;
+    use std::fmt::Display;
+
+    struct Name<'a>(&'a str);
+    struct Value(i32);
+    struct AnyValue<T: Display>(T);
+    struct AnyData<T: Display>(T);
+
+    trait Show {
+        fn show(&self) -> String;
+    }
+
+    #[trait_gen(T -> Name<'_>, Value)]
+    impl Show for T {
+        fn show(&self) -> String {
+            self.0.to_string()
+        }
+    }
+
+    // this would be easier, but testing the more complicated case to illustrate
+    // how to avoid collisions, and to test a blanket implementation:
+    //     #[trait_gen(T -> AnyValue, AnyData)]
+    //     impl<U: Display> Show for T<U> {
+    #[trait_gen(T -> AnyValue<U>, AnyData<U>)]
+    impl<U: Display> Show for T {
+        fn show(&self) -> String {
+            self.0.to_string()
+        }
+    }
+
+    #[test]
+    fn test() {
+        assert_eq!(Name("Bob").show(), "Bob");
+        assert_eq!(Value(10).show(), "10");
+        assert_eq!(AnyValue(5.0).show(), "5");
+        assert_eq!(AnyData("name".to_string()).show(), "name");
+    }
+}
+
+mod path_cases_03 {
+    use trait_gen::trait_gen;
+
+    struct Name<'a>(&'a str);
+    struct Value<'a>(&'a f64);
+
+    trait Show {
+        fn show(&self) -> String;
+    }
+
+    #[trait_gen(T -> Name, Value)]
+    impl Show for T<'_> {
+        fn show(&self) -> String {
+            self.0.to_string()
+        }
+    }
+
+    #[test]
+    fn test() {
+        assert_eq!(Name("Bob").show(), "Bob");
+        assert_eq!(Value(&10.0).show(), "10");
     }
 }
 
