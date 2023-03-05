@@ -10,6 +10,58 @@
 // or
 //     #[trait_gen(Meter -> Meter, Foot, Mile)]
 // -----------------------------------------------------------------------------
+
+struct Meter<T>(T);
+struct Foot<T>(T);
+
+mod path_cases {
+    use trait_gen::trait_gen;
+    use std::ops::{Add, Neg};
+
+    pub mod inner {}
+
+    #[trait_gen(inner::U -> super::Meter<f32>, super::Foot<f32>)]
+    impl Add for inner::U {
+        type Output = inner::U;
+
+        fn add(self, rhs: Self) -> Self::Output {
+            inner::U(self.0 + rhs.0)
+        }
+    }
+
+    #[trait_gen(super::Meter<f32>, super::Foot<f32>)]
+    impl Neg for super::Meter<f32> {
+        type Output = super::Meter<f32>;
+
+        fn neg(self) -> Self::Output {
+            super::Meter::<f32>(-self.0)
+        }
+    }
+
+    #[test]
+    fn test() {
+        let a = super::Meter::<f32>(1.0);
+        let b = super::Meter::<f32>(4.0);
+
+        let c = a + b;
+        assert_eq!(c.0, 5.0);
+        let d = -c;
+        assert_eq!(d.0, -5.0);
+
+        let a = super::Foot::<f32>(1.0);
+        let b = super::Foot::<f32>(4.0);
+
+        let c = a + b;
+        assert_eq!(c.0, 5.0);
+        let d = -c;
+        assert_eq!(d.0, -5.0);
+    }
+}
+
+// Fake types for the tests
+struct T { pub offset: u64 }
+struct U(u32);
+
 mod literals {
     use trait_gen::trait_gen;
     static mut CALLS: Vec<String> = Vec::new();
@@ -40,10 +92,6 @@ mod literals {
         assert_eq!(unsafe { CALLS.join(",") }, "u32,u64");
     }
 }
-
-// Fake types for the tests
-struct T { pub offset: u64 }
-struct U(u32);
 
 mod subst_cases {
     use trait_gen::trait_gen;

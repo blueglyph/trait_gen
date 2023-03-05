@@ -18,7 +18,7 @@ proc-macro = true
 [dependencies]
 quote = "1"
 proc-macro2 = "1"
-syn = { version = "1", features = ["full", "visit-mut"] }
+syn = { version = "1", features = ["full", "visit-mut", "extra-traits"] }
 proc-macro-error = "1"
 
 [dev-dependencies]

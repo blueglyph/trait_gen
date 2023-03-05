@@ -326,21 +326,22 @@
 //! using a type alias or a `use` clause.
 
 use proc_macro::TokenStream;
-use proc_macro2::Ident;
+use std::fmt::{Display, Formatter};
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
+use syn::token::Colon2;
 use syn::visit_mut::VisitMut;
 
 const VERBOSE: bool = false;
 
 #[derive(Debug)]
 struct Types {
-    current_type: Ident,
-    new_types: Vec<Ident>,
+    current_type: Path,
+    new_types: Vec<Path>,
     current_defined: bool,
     enabled: Vec<bool> // cannot substitue when last is false (can substitute if empty)
 }
@@ -351,19 +352,87 @@ impl Types {
     }
 }
 
-fn pathname(path: &Path) -> String {
-    path.segments.iter()
-        .map(|p| {
-            let mut ident = p.ident.to_string();
-            match &p.arguments {
-                PathArguments::None => {}
-                PathArguments::AngleBracketed(_) => ident.push_str("<..>"),
-                PathArguments::Parenthesized(_) => ident.push_str("(..)"),
-            };
-            ident
-        })
-        .collect::<Vec<_>>()
-        .join("::")
+impl Display for Types {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "PathTypes {{\n  current_types: {}\n  new_types: {}\n  current_defined: {}\n  enabled:  {}\n}}",
+            pathname(&self.current_type),
+            self.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
+            self.current_defined.to_string(),
+            self.enabled.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
+        )
+    }
+}
+
+fn pathname<T: ToTokens>(path: &T) -> String {
+    path.to_token_stream().to_string()
+        .replace(" :: ", "::")
+        .replace(" <", "<")
+        .replace("< ", "<")
+        .replace(" >", ">")
+        .replace("> ", ">")
+        .replace("& ", "&")
+        .replace(", ", ",")
+        .replace(") ", ")")
+}
+
+trait NodeMatch {
+    fn match_prefix(&self, other: &Self) -> bool;
+}
+
+impl NodeMatch for GenericArgument {
+    fn match_prefix(&self, other: &Self) -> bool {
+        if let GenericArgument::Lifetime(_) = self {
+            // ignoring the actual lifetime ident
+            matches!(other, GenericArgument::Lifetime(_))
+        } else {
+            self == other
+        }
+    }
+}
+
+impl NodeMatch for PathSegment {
+    /// Compares both segments and returns true if `self` is similar to `seg_pat`, disregarding
+    /// * any "turbofish" difference when there are angle bracket arguments
+    /// * the arguments if `seg_pat` doesn't have any
+    fn match_prefix(&self, seg_pat: &PathSegment) -> bool {
+        self.ident == seg_pat.ident && match &seg_pat.arguments {
+            PathArguments::None =>
+                true, //matches!(seg_pat.arguments, PathArguments::None),
+            PathArguments::AngleBracketed(ab_pat) => {
+                if let PathArguments::AngleBracketed(ab) = &self.arguments {
+                    // ignoring turbofish in colon2_token
+                    ab.args.len() == ab_pat.args.len() &&
+                        ab.args.iter().zip(&ab_pat.args).all(|(a, b)| a.match_prefix(b))
+                } else {
+                    false
+                }
+            }
+            PathArguments::Parenthesized(p_pat) => {
+                if let PathArguments::Parenthesized(p) = &self.arguments {
+                    p == p_pat
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
+fn path_prefix_len(prefix: &Path, full_path: &Path) -> Option<usize> {
+    // if VERBOSE { println!("- path_prefix_len(prefix: {}, full: {})", pathname(prefix), pathname(full_path)); }
+    let prefix_len = prefix.segments.len();
+    if full_path.leading_colon == prefix.leading_colon && full_path.segments.len() >= prefix_len {
+        for (seg_full, seg_prefix) in full_path.segments.iter().zip(&prefix.segments) {
+            if !seg_full.match_prefix(seg_prefix) {
+                // if VERBOSE { print!("  - {:?} != {:?} ", pathname(seg_prefix), pathname(seg_full)); }
+                return None;
+            } else {
+                // if VERBOSE { print!("  - {:?} ~= {:?} ", pathname(seg_prefix), pathname(seg_full)); }
+            }
+        }
+        return Some(prefix_len)
+    }
+    None
 }
 
 /// Replaces the pattern `pat` with `repl` in `string`. Returns `Some(resulting string)` if
@@ -399,24 +468,27 @@ impl VisitMut for Types {
     }
 
     fn visit_generics_mut(&mut self, i: &mut Generics) {
-        for t in i.params.iter() {
-            match &t {
-                GenericParam::Type(t) => {
-                    if t.ident == self.current_type {
-                        abort!(t.span(),
-                            "Type '{}' is reserved for the substitution.", self.current_type.to_string();
-                            help = "Use another identifier for this local generic type."
-                        );
+        if let Some(segment) = self.current_type.segments.first() {
+            let current_ident = &segment.ident;
+            for t in i.params.iter() {
+                match &t {
+                    GenericParam::Type(t) => {
+                        if &t.ident == current_ident {
+                            abort!(t.span(),
+                                "Type '{}' is reserved for the substitution.", current_ident.to_string();
+                                help = "Use another identifier for this local generic type."
+                            );
 
-                        // replace the 'abort!' above with this once it is stable:
-                        //
-                        // t.span().unwrap()
-                        //     .error(format!("Type '{}' is reserved for the substitution.", self.current_type.to_string()))
-                        //     .help("Use another identifier for this local generic type.")
-                        //     .emit();
+                            // replace the 'abort!' above with this once it is stable:
+                            //
+                            // t.span().unwrap()
+                            //     .error(format!("Type '{}' is reserved for the substitution.", self.current_type.to_string()))
+                            //     .help("Use another identifier for this local generic type.")
+                            //     .emit();
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
         }
         syn::visit_mut::visit_generics_mut(self, i);
@@ -427,8 +499,8 @@ impl VisitMut for Types {
             // substitutes "${T}" in expression literals (not used in macros, see visit_macro_mut)
             if let Some(ts_str) = replace_str(
                 &lit.to_token_stream().to_string(),
-                &format!("${{{}}}", self.current_type.to_string()),
-                &self.new_types.first().unwrap().to_string())
+                &format!("${{{}}}", pathname(&self.current_type)),
+                &pathname(self.new_types.first().unwrap()))
             {
                 let new_lit: LitStr = parse_str(&ts_str).expect(&format!("parsing LitStr failed: {}", ts_str));
                 node.lit = Lit::Str(new_lit);
@@ -441,13 +513,17 @@ impl VisitMut for Types {
     fn visit_path_mut(&mut self, path: &mut Path) {
         if self.substitution_enabled() {
             let pathname = pathname(path);
-            if let Some(segment) = path.segments.first_mut() {
-                if VERBOSE { println!("path: {} -> first_ident = {}", pathname, segment.ident.to_string()); }
-                if segment.ident == self.current_type {
-                    segment.ident = self.new_types.first().unwrap().clone();
+            if let Some(length) = path_prefix_len(&self.current_type, path) {
+                if VERBOSE { println!("path: {} length = {}", pathname, length); }
+                for (seg, new_seg) in path.segments.iter_mut().zip(&self.new_types.first().unwrap().segments) {
+                    // if VERBOSE { println!("- {:?} -> {:?}", seg, new_seg); }
+                    seg.ident = new_seg.ident.clone();
+                    if !new_seg.arguments.is_empty() {
+                        seg.arguments = new_seg.arguments.clone();
+                    }
                 }
             } else {
-                if VERBOSE { println!("path: {}", pathname); }
+                if VERBOSE { println!("path: {} mismatch", pathname); }
             }
         } else {
             if VERBOSE { println!("disabled path: {}", pathname(path)); }
@@ -467,8 +543,8 @@ impl VisitMut for Types {
         // substitutes "${T}" in macros
         if let Some(ts_str) = replace_str(
             &node.tokens.to_string(),
-            &format!("${{{}}}", self.current_type.to_string()),
-            &self.new_types.first().unwrap().to_string())
+            &format!("${{{}}}", pathname(&self.current_type)),
+            &pathname(self.new_types.first().unwrap()))
         {
             let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing Macro failed: {}", ts_str));
             node.tokens = new_ts;
@@ -482,8 +558,8 @@ impl VisitMut for Types {
             if ident.to_string() == "doc" {
                 if let Some(ts_str) = replace_str(
                     &node.tokens.to_string(),
-                    &format!("${{{}}}", self.current_type.to_string()),
-                    &self.new_types.first().unwrap().to_string())
+                    &format!("${{{}}}", pathname(&self.current_type)),
+                    &pathname(self.new_types.first().unwrap()))
                 {
                     let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing attribute failed: {}", ts_str));
                     node.tokens = new_ts;
@@ -495,19 +571,30 @@ impl VisitMut for Types {
     }
 }
 
+/// Attribute argument parser
 impl Parse for Types {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        if input.peek2(Token![->]) {
-            let current_type = input.parse::<Ident>()?;
+        let first = input.parse::<Path>()?;
+        if input.peek(Token![->]) {
+            let current_type = first;
             input.parse::<Token![->]>()?;
-            let vars = Punctuated::<Ident, Token![,]>::parse_terminated(input)?;
-            let new_types: Vec<Ident> = vars.into_iter().collect();
+            let vars = Punctuated::<Path, Token![,]>::parse_terminated(input)?;
+            let new_types: Vec<Path> = vars.into_iter().collect();
             Ok(Types { current_type, new_types, current_defined: false, enabled: Vec::new() })
         } else {
-            let vars = Punctuated::<Ident, Token![,]>::parse_terminated(input)?;
-            let mut new_types: Vec<Ident> = vars.into_iter().collect();
-            let current_type = new_types.remove(0);
+            input.parse::<Token![,]>()?;
+            let vars = Punctuated::<Path, Token![,]>::parse_terminated(input)?;
+            let new_types: Vec<Path> = vars.into_iter().collect();
+            let current_type = first;
             Ok(Types { current_type, new_types, current_defined: true, enabled: Vec::new() })
+        }
+    }
+}
+
+fn set_tubofish(path: &mut Path) {
+    for segment in &mut path.segments {
+        if let PathArguments::AngleBracketed(generic_args) = &mut segment.arguments {
+            generic_args.colon2_token = Some(Colon2::default());
         }
     }
 }
@@ -624,10 +711,15 @@ impl Parse for Types {
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut types = parse_macro_input!(args as Types);
+    for ty in types.new_types.iter_mut() {
+        // the turbofish is necessary in expressions, and not an error elsewhere, we simplify
+        // by setting the turbofish in all replacements:
+        set_tubofish(ty);
+    }
     if VERBOSE { println!("{}\ntrait_gen for {} -> {}",
                           "=".repeat(80),
-                          types.current_type.to_string(),
-                          &types.new_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ")
+                          pathname(&types.current_type),
+                          &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")
                  )}
     if VERBOSE { println!("\n{}\n{}", item, "-".repeat(80)); }
     let ast: File = syn::parse(item).unwrap();
@@ -637,13 +729,13 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
         types.visit_file_mut(&mut modified_ast);
         output.extend(TokenStream::from(quote!(#modified_ast)));
         assert!(types.enabled.is_empty(), "self.enabled has {} entries after type {}",
-                types.enabled.len(), types.new_types.first().unwrap().to_string());
+                types.enabled.len(), pathname(types.new_types.first().unwrap()));
         types.new_types.remove(0);
     }
     if types.current_defined {
         output.extend(TokenStream::from(quote!(#ast)));
     }
-    if VERBOSE { println!("end trait_gen for {}\n{}", types.current_type.to_string(), "-".repeat(80)); }
+    if VERBOSE { println!("end trait_gen for {}\n{}", pathname(&types.current_type), "-".repeat(80)); }
     if VERBOSE { println!("{}\n{}", output, "=".repeat(80)); }
     output
 }
