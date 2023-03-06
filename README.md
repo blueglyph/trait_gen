@@ -26,7 +26,7 @@ types, without the need for custom declarative macros.
 
 In the example below, the `Add` trait is implemented for `Meter`, `Foot` and `Mile`. The
 `T` type identifier is used to mark where the substitution takes place; it can be an existing type
-or alias but it's not mandatory.
+or an alias but it's not necessary.
 
 ```rust
 use trait_gen::trait_gen;
@@ -95,6 +95,9 @@ The code must of course be compatible with all the types, or the compiler will t
 relevant errors. For example `#[trait_gen(T -> u64, f64)]` cannot be used with `Self(0)` because
 `0` is not a valid floating-point literal.
 
+Any occurrence of the parameter with the `${T}` format in doc comments, macros and string
+literals are replaced by the actual type in each implementation.
+
 ## Examples
 
 Here are a few examples of the substitutions that are supported.
@@ -123,7 +126,7 @@ impl AddMod for U {
         }
     }
     ```
-  (and the same for `i32`)
+  (and similarly for `i32`)
 
 This code, with `struct Meter(f64)`, `struct Foot(f64)` and so on:
 
@@ -151,7 +154,7 @@ impl Add for T {
         }
     }
     ```
-  (and the same for `Foot` and `Mile`)
+  (and similarly for `Foot` and `Mile`)
 
   The same expansion can be performed on tuples or other struct types.
 
@@ -173,7 +176,7 @@ impl GetLength<U> for Meter<U> {
 }
 ```
 
-This attribute can be combined with another one to create a cross-product generator, producing 4 implementations:
+This attribute can be combined with another one to create a _cross-product generator_, implementing the trait for `Meter<f32>`, `Meter<f64`, `Foot<f32>`, `Foot<f64>`:
 
 ```rust
 #[trait_gen(T -> Meter, Foot)]
@@ -185,7 +188,23 @@ impl GetLength<U> for T<U> {
 }
 ```
 
-The actual type name replaces any occurrence of the parameter, with the `${T}` format, in doc comments, macros and string literals:
+Multisegment paths (paths with `::`) and path arguments (`<f32>`) can be used in the parameters. Here for example, `inner::U` is used to avoid any confusion with types if many single-letter types have already been defined. Also, the types `Meter` and `Foot` keep a part of their original module path (`units`): 
+
+_Note: `inner` needn't actually exist since it's replaced._
+
+```rust
+#[trait_gen(inner::U -> units::Meter<f32>, units::Foot<f32>)]
+impl Add for inner::U {
+    type Output = inner::U;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        inner::U(self.0 + rhs.0)
+    }
+}
+```
+
+
+The documentation can be customized in each implementation by using `${T}`. This also works in macros and string literals:
 
 ```rust
 # use trait_gen::trait_gen;
@@ -357,7 +376,7 @@ the `Default` trait or creating a specific one.
   }
   ```
   
-  The other attribute format allows the substitution: 
+  The `->` attribute format allows the substitution: 
 
   ```rust
   #[trait_gen(T -> Meter, Foot, Mile)]
@@ -368,8 +387,7 @@ the `Default` trait or creating a specific one.
   }
   ```
 
-* The attribute doesn't handle scopes, so it doesn't support any type declaration with the same name
-as the type that must be substituted, including generics. This, for instance, fails to compile:
+* The procedural macro behind the attribute can't handle scopes, so it doesn't support any type declaration with the same type name as the attribute parameter, including generics. This, for instance, fails to compile:
 
   ```rust
   use num::Num;
@@ -392,11 +410,6 @@ as the type that must be substituted, including generics. This, for instance, fa
       }
   }
   ```
-
-* Substitutions are limited to single segments, like `Meter`. They don't support multiple
-segments or arguments, like `super::Meter` or `Meter<f64>`. The same applies to the attribute
-parameter: `T -> ...` is allowed, but not `super::T -> ...`. This can be worked around by 
-using a type alias or a `use` clause.
 
 # Compatibility
 

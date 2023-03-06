@@ -9,7 +9,7 @@
 //!
 //! In the example below, the `Add` trait is implemented for `Meter`, `Foot` and `Mile`.
 //! The `T` type identifier is used to mark where the substitution takes place; it can be an
-//! existing type or alias but it's not mandatory.
+//! existing type or an alias but it's not necessary.
 //!
 //! ```rust
 //! # use std::ops::Add;
@@ -89,8 +89,8 @@
 //! relevant errors. For example `#[trait_gen(T -> u64, f64)]` cannot be used with `Self(0)` because
 //! `0` is not a valid floating-point literal.
 //!
-//! The actual type name replaces any occurrence of the parameter with the `${T}` format in doc
-//! comments, macros and string literals:
+//! Any occurrence of the parameter with the `${T}` format in doc comments, macros and string
+//! literals are replaced by the actual type in each implementation:
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
@@ -279,7 +279,7 @@
 //!   }
 //!   ```
 //!
-//!   The other attribute format allows the substitution:
+//!   The `->` attribute format allows the substitution:
 //!
 //!   ```rust
 //!   # use trait_gen::trait_gen;
@@ -295,8 +295,9 @@
 //!   }
 //!   ```
 //!
-//! * The attribute doesn't handle scopes, so it doesn't support any type declaration with the same name
-//! as the type that must be substituted, including generics. This, for instance, fails to compile:
+//! * The procedural macro behind the attribute can't handle scopes, so it doesn't support any type
+//! declaration with the same type name as the attribute parameter, including generics. This, for
+//! instance, fails to compile:
 //!
 //!   ```rust,compile_fail
 //!   use num::Num;
@@ -319,11 +320,6 @@
 //!       }
 //!   }
 //!   ```
-//!
-//! * Substitutions are limited to single segments, like `Meter`. They don't support multiple
-//! segments or arguments, like `super::Meter` or `Meter<f64>`. The same applies to the attribute
-//! parameter: `T -> ...` is allowed, but not `super::T -> ...`. This can be worked around by
-//! using a type alias or a `use` clause.
 
 use proc_macro::TokenStream;
 use std::fmt::{Display, Formatter};
@@ -610,7 +606,7 @@ fn set_tubofish(path: &mut Path) {
 ///
 /// In the example below, the `Add` trait is implemented for `Meter`, `Foot` and `Mile`. The
 /// `T` type identifier is used to mark where the substitution takes place; it can be an existing type
-/// or alias but it's not mandatory.
+/// or an alias but it's not necessary.
 ///
 /// ```rust
 /// # use std::ops::Add;
@@ -682,7 +678,7 @@ fn set_tubofish(path: &mut Path) {
 ///   }
 ///   ```
 ///
-///   The other attribute format allows the substitution:
+///   The `->` attribute format allows the substitution:
 ///
 ///   ```rust,compile_fail
 ///   #[trait_gen(T -> Meter, Foot, Mile)]
@@ -693,8 +689,9 @@ fn set_tubofish(path: &mut Path) {
 ///   }
 ///   ```
 ///
-/// * The macro doesn't handle scopes, so it doesn't support any type declaration with the same name
-/// as the type that must be substituted, including generics. This, for instance, fails to compile:
+/// * The procedural macro behind the attribute can't handle scopes, so it doesn't support any type
+/// declaration with the same type name as the attribute parameter, including generics. This, for
+/// instance, fails to compile:
 ///
 ///   ```rust,compile_fail
 ///   #[trait_gen(T -> u64, i64, u32, i32)]
@@ -709,11 +706,6 @@ fn set_tubofish(path: &mut Path) {
 ///       }
 ///   }
 ///   ```
-///
-/// * Substitutions are limited to single segments, like `Meter`. They don't support multiple
-/// segments or arguments, like `super::Meter` or `Meter<f64>`. The same applies to the attribute
-/// parameter: `T -> ...` is allowed, but not `super::T -> ...`. This can be worked around by
-/// using a type alias or a `use` clause.
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {

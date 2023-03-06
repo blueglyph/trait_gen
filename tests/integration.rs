@@ -10,6 +10,7 @@
 // or
 //     #[trait_gen(Meter -> Meter, Foot, Mile)]
 // -----------------------------------------------------------------------------
+
 // Fake types for the tests
 struct T { pub offset: u64 }
 struct U(u32);

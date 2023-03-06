@@ -1,6 +1,6 @@
-# 0.1.6
+# 0.1.6 (2023-03-06)
 
-- general type paths can be used in the attribute parameters
+- add multi-segment paths in parameters
   ```rust
   #[trait_gen(inner::U -> super::Meter<f32>, super::Foot<f32>)]
   impl Add for inner::U {
@@ -11,10 +11,11 @@
       }
   }
   ```
+- fix `U::MAX` not replaced with `#[trait_gen(U -> ...)]` and other bugs
 
 # 0.1.5 (2023-03-04)
 
-- attribute type parameter can be used in simple type arguments, which can be used in cross-product generation:
+- add simple type arguments substitution, which can be used in cross-product generation:
   ```rust
   #[trait_gen(T -> Meter, Foot)]
   #[trait_gen(U -> f32, f64)]
@@ -24,7 +25,7 @@
       }
   }
   ```
-- substitutes the real type for `${T}` in docs, expression string literals and macros:
+- add real type substitution in docs, expression string literals and macros (`${T}`):
   ```rust
   #[trait_gen(T -> u32, u64)]
   impl Lit for T {
@@ -38,7 +39,7 @@
 
 # 0.1.4 (2023-03-01)
 
-- attribute type parameter can be used as constructor with the `T ->` form
+- add constructor substitution with the `T ->` form
 - all paths starting with the type parameter are replaced, for example `T::default()` has `T` replaced with the `T ->` form (before, the whole path had to match)
 
 # 0.1.3 (2023-02-25)
