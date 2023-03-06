@@ -512,10 +512,15 @@ impl VisitMut for Types {
     }
 
     fn visit_path_mut(&mut self, path: &mut Path) {
-        if self.substitution_enabled() {
-            let pathname = pathname(path);
-            if let Some(length) = path_prefix_len(&self.current_type, path) {
-                if VERBOSE { println!("path: {} length = {}", pathname, length); }
+        let path_name = pathname(path);
+        let path_length = path.segments.len();
+        if let Some(length) = path_prefix_len(&self.current_type, path) {
+            // If U is both a constant and the attribute parameter type, in an expression so when
+            // self.substitution_enabled() == false, we must distinguish two cases:
+            // - U::MAX must be replaced (length < path_length)
+            // - U or U.add(1) must stay
+            if length < path_length || self.substitution_enabled() {
+                if VERBOSE { println!("path: {} length = {}", path_name, length); }
                 for (seg, new_seg) in path.segments.iter_mut().zip(&self.new_types.first().unwrap().segments) {
                     // if VERBOSE { println!("- {:?} -> {:?}", seg, new_seg); }
                     seg.ident = new_seg.ident.clone();
@@ -524,11 +529,11 @@ impl VisitMut for Types {
                     }
                 }
             } else {
-                if VERBOSE { println!("path: {} mismatch", pathname); }
+                if VERBOSE { println!("disabled path: {}", path_name); }
                 syn::visit_mut::visit_path_mut(self, path);
             }
         } else {
-            if VERBOSE { println!("disabled path: {}", pathname(path)); }
+            if VERBOSE { println!("path: {} mismatch", path_name); }
             syn::visit_mut::visit_path_mut(self, path);
         }
     }

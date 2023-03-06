@@ -10,7 +10,9 @@
 // or
 //     #[trait_gen(Meter -> Meter, Foot, Mile)]
 // -----------------------------------------------------------------------------
-
+// Fake types for the tests
+struct T { pub offset: u64 }
+struct U(u32);
 struct Meter<T>(T);
 struct Foot<T>(T);
 
@@ -122,10 +124,6 @@ mod path_cases_03 {
     }
 }
 
-// Fake types for the tests
-struct T { pub offset: u64 }
-struct U(u32);
-
 mod literals {
     use trait_gen::trait_gen;
     static mut CALLS: Vec<String> = Vec::new();
@@ -158,6 +156,7 @@ mod literals {
 }
 
 mod subst_cases {
+    use std::ops::{Add, Sub};
     use trait_gen::trait_gen;
 
     trait AddMod {
@@ -169,12 +168,13 @@ mod subst_cases {
         fn add_mod(self, other: U, m: U) -> U {
             // constant name must stay, type must change:
             const U: U = 0;
-            // type must change:
-            let zero = U::default();
+            // U:: type must change, U.add(U) must stay:
+            let zero1 = U::default() + U.add(U);
+            let zero2 = U::MAX.sub(U::MAX);
             // type must stay:
             let offset: super::U = super::U(0);
             // constant must stay, cast type must change:
-            (self + other + U + zero + offset.0 as U) % m
+            (self + other + U + zero1 + zero2 + offset.0 as U) % m
         }
     }
 
