@@ -325,19 +325,19 @@ use proc_macro::TokenStream;
 use std::fmt::{Display, Formatter};
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Colon2;
 use syn::visit_mut::VisitMut;
 
-const VERBOSE: bool = false;
+const VERBOSE: bool = true;
 
 #[derive(Debug)]
 struct Types {
     current_type: Path,
-    new_types: Vec<Path>,
+    new_types: Vec<Type>,
     current_defined: bool,
     enabled: Vec<bool> // cannot substitue when last is false (can substitute if empty)
 }
@@ -441,7 +441,6 @@ fn replace_str(string: &str, pat: &str, repl: &str) -> Option<String> {
         None
     }
 }
-
 impl VisitMut for Types {
     fn visit_expr_mut(&mut self, node: &mut Expr) {
         let mut enabled = self.substitution_enabled();
@@ -581,23 +580,88 @@ impl Parse for Types {
         if input.peek(Token![->]) {
             let current_type = first;
             input.parse::<Token![->]>()?;
-            let vars = Punctuated::<Path, Token![,]>::parse_terminated(input)?;
-            let new_types: Vec<Path> = vars.into_iter().collect();
+            // let vars = Punctuated::<Path, Token![,]>::parse_terminated(input)?;
+            // if VERBOSE {
+            //     println!("Args: {}", vars_type.iter()
+            //         .map(|ty| format!("{:?}", pathname(ty)))
+            //         .collect::<Vec<_>>().join(", "));
+            // }
+            // let vars = vars.into_iter()
+            //     .filter(|ty| matches!(ty, Type::Path(_)))
+            //     .map(|ty| {
+            //         let Type::Path(p) = ty else { abort!(ty.span(), "expecting Type::Path, got {:?}", ty); };
+            //         p.path
+            //     });
+            // let new_types: Vec<Path> = vars.into_iter().collect();
+            let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
+            let new_types: Vec<Type> = vars.into_iter().collect();
             Ok(Types { current_type, new_types, current_defined: false, enabled: Vec::new() })
         } else {
             input.parse::<Token![,]>()?;
-            let vars = Punctuated::<Path, Token![,]>::parse_terminated(input)?;
-            let new_types: Vec<Path> = vars.into_iter().collect();
+            // let vars = Punctuated::<Path, Token![,]>::parse_terminated(input)?;
+            // let new_types: Vec<Path> = vars.into_iter().collect();
+            let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
+            let new_types: Vec<Type> = vars.into_iter().collect();
             let current_type = first;
             Ok(Types { current_type, new_types, current_defined: true, enabled: Vec::new() })
         }
     }
 }
 
-fn set_tubofish(path: &mut Path) {
-    for segment in &mut path.segments {
-        if let PathArguments::AngleBracketed(generic_args) = &mut segment.arguments {
-            generic_args.colon2_token = Some(Colon2::default());
+trait Turbofish {
+    fn set_tubofish(&mut self);
+}
+
+impl Turbofish for Path {
+    fn set_tubofish(&mut self) {
+        for segment in &mut self.segments {
+            if let PathArguments::AngleBracketed(generic_args) = &mut segment.arguments {
+                generic_args.colon2_token = Some(Colon2::default());
+            }
+        }
+    }
+}
+
+impl Turbofish for Type {
+    fn set_tubofish(&mut self) {
+        if VERBOSE {
+            print!("turbofish: {} = ", pathname(self));
+            match self {
+                Type::Array(_) => println!("Type::Array"),
+                Type::BareFn(_) => println!("Type::BareFn"),
+                Type::Group(_) => println!("Type::Group"),
+                Type::ImplTrait(_) => println!("Type::ImplTrait"),
+                Type::Infer(_) => println!("Type::Infer"),
+                Type::Macro(_) => println!("Type::Macro"),
+                Type::Never(_) => println!("Type::Never"),
+                Type::Paren(_) => println!("Type::Paren"),
+                Type::Path(_) => println!("Type::Path"),
+                Type::Ptr(_) => println!("Type::Ptr"),
+                Type::Reference(_) => println!("Type::Reference"),
+                Type::Slice(_) => println!("Type::Slice"),
+                Type::TraitObject(_) => println!("Type::TraitObject"),
+                Type::Tuple(_) => println!("Type::Tuple"),
+                Type::Verbatim(_) => println!("Type::Verbatim"),
+                _ => println!("?? {:?}", self),
+            }
+        }
+        match self {
+            Type::Array(_) => {}
+            Type::BareFn(_) => {}
+            Type::Group(_) => {}
+            Type::ImplTrait(_) => {}
+            Type::Infer(_) => {}
+            Type::Macro(_) => {}
+            Type::Never(_) => {}
+            Type::Paren(_) => {}
+            Type::Path(p) => p.path.set_tubofish(),
+            Type::Ptr(_) => {}
+            Type::Reference(r) => r.elem.set_tubofish(),
+            Type::Slice(_) => {}
+            Type::TraitObject(_) => {}
+            Type::Tuple(_) => {}
+            Type::Verbatim(_) => {}
+            _ => {}
         }
     }
 }
@@ -713,7 +777,7 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     for ty in types.new_types.iter_mut() {
         // the turbofish is necessary in expressions, and not an error elsewhere, we simplify
         // by setting the turbofish in all replacements:
-        set_tubofish(ty);
+        ty.set_tubofish();
     }
     if VERBOSE { println!("{}\ntrait_gen for {} -> {}",
                           "=".repeat(80),

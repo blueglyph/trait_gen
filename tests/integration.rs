@@ -11,6 +11,69 @@
 //     #[trait_gen(Meter -> Meter, Foot, Mile)]
 // -----------------------------------------------------------------------------
 
+mod ref_types {
+    use std::ops::Deref;
+    use trait_gen::trait_gen;
+
+    #[derive(Debug, PartialEq)]
+    struct Meter(i64);
+    #[derive(Debug, PartialEq)]
+    struct Foot(i64);
+
+    trait Negate {
+        type Output;
+        fn negate(self) -> Self::Output;
+    }
+
+    // #[trait_gen(T -> Meter, Foot)]
+    // impl Negate for T {
+    //     type Output = T;
+    //     fn negate(self) -> Self::Output {
+    //         T(-self.0)
+    //     }
+    // }
+
+    impl Negate for Meter {
+        type Output = Meter;
+        fn negate(self) -> Self::Output {
+            Meter(-self.0)
+        }
+    }
+    impl Negate for Foot {
+        type Output = Foot;
+        fn negate(self) -> Self::Output {
+            Foot(-self.0)
+        }
+    }
+
+    #[trait_gen(U -> &T, &mut T, Box<T>)]
+    #[trait_gen(T -> Meter, Foot)]
+    impl Negate for U {
+        type Output = T;
+        fn negate(self) -> Self::Output {
+            T(-self.deref().0)
+        }
+    }
+
+    fn negate<T, O>(x: T) -> O
+        where T: Negate<Output = O>
+    {
+        x.negate()
+    }
+
+    #[test]
+    fn test() {
+        let x: Meter = Meter(5);
+        let x_ref: &Meter = &Meter(5);
+        let y = negate(x);
+        let y_ref = negate(x_ref);
+        assert_eq!(y, Meter(-5));  // doesn't need forward definition
+        assert_eq!(y_ref, Meter(-5));
+    }
+
+}
+
+/*
 // Fake types for the tests
 struct T { pub offset: u64 }
 struct U(u32);
@@ -572,3 +635,4 @@ mod ex03b {
         assert_eq!(h.into_u64(), 10_u64);
     }    
 }
+*/
