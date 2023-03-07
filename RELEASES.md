@@ -1,3 +1,7 @@
+# 0.1.7 (2023-03-07)
+
+- fix bug in multisegment path substitution
+
 # 0.1.6 (2023-03-06)
 
 - add multi-segment paths in parameters

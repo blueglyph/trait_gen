@@ -23,12 +23,12 @@ mod path_cases_01 {
 
     pub mod inner {}
 
-    #[trait_gen(inner::U -> super::Meter<f32>, super::Foot<f32>)]
-    impl Add for inner::U {
-        type Output = inner::U;
+    #[trait_gen(U -> super::Meter<f32>, super::Foot<f32>)]
+    impl Add for U {
+        type Output = U;
 
         fn add(self, rhs: Self) -> Self::Output {
-            inner::U(self.0 + rhs.0)
+            U(self.0 + rhs.0)
         }
     }
 
@@ -62,6 +62,41 @@ mod path_cases_01 {
 }
 
 mod path_cases_02 {
+
+    struct Meter<T>(T);
+    struct Foot<T>(T);
+
+    pub mod inner {
+        use trait_gen::trait_gen;
+        use std::ops::Add;
+        
+        #[trait_gen(gen::U -> super::Meter<f32>, super::Foot<f32>)]
+        impl Add for gen::U {
+            type Output = gen::U;
+        
+            fn add(self, rhs: Self) -> Self::Output {
+                gen::U(self.0 + rhs.0)
+            }
+        }
+        
+        #[test]
+        fn test() {
+            let a = super::Meter::<f32>(1.0);
+            let b = super::Meter::<f32>(4.0);
+        
+            let c = a + b;
+            assert_eq!(c.0, 5.0);
+        
+            let a = super::Foot::<f32>(1.0);
+            let b = super::Foot::<f32>(4.0);
+        
+            let c = a + b;
+            assert_eq!(c.0, 5.0);
+        }
+    }
+}
+
+mod path_cases_03 {
     use trait_gen::trait_gen;
     use std::fmt::Display;
 
@@ -101,7 +136,7 @@ mod path_cases_02 {
     }
 }
 
-mod path_cases_03 {
+mod path_cases_04 {
     use trait_gen::trait_gen;
 
     struct Name<'a>(&'a str);
@@ -113,6 +148,57 @@ mod path_cases_03 {
 
     #[trait_gen(T -> Name, Value)]
     impl Show for T<'_> {
+        fn show(&self) -> String {
+            self.0.to_string()
+        }
+    }
+
+    #[test]
+    fn test() {
+        assert_eq!(Name("Bob").show(), "Bob");
+        assert_eq!(Value(&10.0).show(), "10");
+    }
+}
+
+mod path_cases_05 {
+    struct Name<'a>(&'a str);
+    struct Value<'a>(&'a f64);
+    mod inner {
+        mod depth {
+            use trait_gen::trait_gen;
+
+            trait Show {
+                fn show(&self) -> String;
+            }
+
+            #[trait_gen(T -> super::super::Name, super::super::Value)]
+            impl Show for T<'_> {
+                fn show(&self) -> String {
+                    self.0.to_string()
+                }
+            }
+
+            #[test]
+            fn test() {
+                assert_eq!(super::super::Name("Bob").show(), "Bob");
+                assert_eq!(super::super::Value(&10.0).show(), "10");
+            }
+        }
+    }
+}
+
+mod path_cases_06 {
+    use trait_gen::trait_gen;
+
+    struct Name<'a>(&'a str);
+    struct Value<'a>(&'a f64);
+
+    trait Show {
+        fn show(&self) -> String;
+    }
+
+    #[trait_gen(gen::par -> Name, Value)]
+    impl Show for gen::par<'_> {
         fn show(&self) -> String {
             self.0.to_string()
         }
