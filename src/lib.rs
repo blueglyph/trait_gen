@@ -515,14 +515,23 @@ impl VisitMut for Types {
             // - U::MAX must be replaced (length < path_length)
             // - U or U.add(1) must stay
             if length < path_length || self.substitution_enabled() {
-                if VERBOSE { println!("path: {} length = {}", path_name, length); }
-                for (seg, new_seg) in path.segments.iter_mut().zip(&self.new_types.first().unwrap().segments) {
-                    // if VERBOSE { println!("- {:?} -> {:?}", seg, new_seg); }
-                    seg.ident = new_seg.ident.clone();
-                    if !new_seg.arguments.is_empty() {
-                        seg.arguments = new_seg.arguments.clone();
-                    }
+                if VERBOSE { print!("path: {} length = {}", path_name, length); }
+                let mut new_seg = self.new_types.first().unwrap().segments.clone();
+                for seg in path.segments.iter().skip(length) {
+                    new_seg.push(seg.clone());
                 }
+                // check if orphan arguments:
+                //     #[trait_gen(gen::T -> mod::Name, ...) { ... gen::T<'_> ... }
+                //     path     = gen :: T   <'_>    len = 2, subst enabled
+                //     new_path = mod :: Name        len = 2
+                //  => new_seg  = mod :: Name<'_>
+                let mut nth_new_seg = new_seg.last_mut().unwrap();
+                let nth_seg = path.segments.iter().nth(length - 1).unwrap();
+                if nth_new_seg.arguments.is_empty() && !nth_seg.arguments.is_empty() {
+                    nth_new_seg.arguments = nth_seg.arguments.clone();
+                }
+                path.segments = new_seg;
+                if VERBOSE { println!(" -> {}", pathname(path)); }
             } else {
                 if VERBOSE { println!("disabled path: {}", path_name); }
                 syn::visit_mut::visit_path_mut(self, path);
