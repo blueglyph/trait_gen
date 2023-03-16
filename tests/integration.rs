@@ -344,9 +344,21 @@ mod cross_product {
         fn length(&self) -> T;
     }
 
-    #[trait_gen(T -> Meter, Foot)]
-    #[trait_gen(U -> f32, f64)]
-    impl GetLength<U> for T<U> {
+    // #[trait_gen(T -> Meter, Foot)]
+    // #[trait_gen(U -> f32, f64)]
+    // impl GetLength<U> for T<U> {
+    //     fn length(&self) -> U {
+    //         self.0 as U
+    //     }
+    // }
+
+    // Warning! The substitution is not done in attribute paramters. If parameters of attribute A
+    //          include the generic parameter of another attribute B, A should be put first. It will
+    //          copy its parameters literally, and they will be replaced when B is processed:
+    //
+    #[trait_gen(T -> Meter<U>, Foot<U>)]    // <-- attribute A, parameters include generic 'U' of B
+    #[trait_gen(U -> f32, f64)]             // <-- attribute B
+    impl GetLength<U> for T {
         fn length(&self) -> U {
             self.0 as U
         }
