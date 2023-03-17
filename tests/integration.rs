@@ -10,7 +10,45 @@
 // or
 //     #[trait_gen(Meter -> Meter, Foot, Mile)]
 // -----------------------------------------------------------------------------
+mod type_cases_00 {
+    use trait_gen::trait_gen;
 
+    trait MyLog {
+        fn my_log2(self) -> u32;
+    }
+
+    impl MyLog for i32 {
+        fn my_log2(self) -> u32 {
+            i32::BITS - 1 -self.leading_zeros()
+        }
+    }
+
+    #[trait_gen(my::T -> &i32, &mut i32, Box<i32>)]
+    impl MyLog for my::T {
+        fn my_log2(self) -> u32 {
+            MyLog::my_log2(*self)
+        }
+    }
+
+    fn show_log2(x: impl MyLog) -> u32 {
+        x.my_log2()
+    }
+
+    #[test]
+    fn test() {
+        let a = 6;
+        let p_a = &a;
+        let mut b = 1023;
+        let p_b = &mut b;
+        let box_a = Box::new(a);
+
+        assert_eq!(show_log2(a), 2);
+        assert_eq!(show_log2(p_a), 2);
+        assert_eq!(show_log2(p_b), 9);
+        assert_eq!(show_log2(box_a), 2);
+    }
+}
+/*
 mod type_cases_01 {
     use trait_gen::trait_gen;
 
@@ -28,9 +66,9 @@ mod type_cases_01 {
     //
     // #[trait_gen(T -> &U, &mut U, Box<U>)]
     // #[trait_gen(U -> u8, u16, u32, u64, u128)]
-    // impl IntLog for T {
-    //     fn log2(self) -> u32 {
-    //         IntLog::log2(*self)
+    // impl MyLog for T {
+    //     fn my_log2(self) -> u32 {
+    //         MyLog::my_log2(*self)
     //     }
     // }
 
@@ -194,7 +232,6 @@ mod type_cases_03 {
 
 }
 
-/*
 // Fake types for the tests
 struct T { pub offset: u64 }
 struct U(u32);

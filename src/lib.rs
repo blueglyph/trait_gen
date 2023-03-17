@@ -332,13 +332,39 @@ use syn::spanned::Spanned;
 use syn::token::Colon2;
 use syn::visit_mut::VisitMut;
 
-const VERBOSE: bool = true;
+const VERBOSE: bool = false;
+
+#[derive(Debug)]
+enum SubstType {
+    Path(Path),
+    Type(Type)
+}
+
+// impl SubstType {
+//     fn is_path(&self) -> bool {
+//         if let SubstType::Path(_) = self { true } else { false }
+//     }
+//
+//     fn is_type(&self) -> bool {
+//         !self.is_path()
+//     }
+// }
+
+impl ToTokens for SubstType {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match self {
+            SubstType::Path(path) => path.to_tokens(tokens),
+            SubstType::Type(ty) => ty.to_tokens(tokens)
+        }
+    }
+}
 
 #[derive(Debug)]
 struct Types {
     current_type: Path,
-    new_types: Vec<Type>,
+    new_types: Vec<SubstType>,
     current_defined: bool,
+    is_path: bool,
     enabled: Vec<bool> // cannot substitue when last is false (can substitute if empty)
 }
 
@@ -441,6 +467,7 @@ fn replace_str(string: &str, pat: &str, repl: &str) -> Option<String> {
         None
     }
 }
+
 impl VisitMut for Types {
     fn visit_expr_mut(&mut self, node: &mut Expr) {
         let mut enabled = self.substitution_enabled();
@@ -516,22 +543,30 @@ impl VisitMut for Types {
             // - U or U.add(1) must stay
             if length < path_length || self.substitution_enabled() {
                 if VERBOSE { print!("path: {} length = {}", path_name, length); }
-                let mut new_seg = self.new_types.first().unwrap().segments.clone();
-                for seg in path.segments.iter().skip(length) {
-                    new_seg.push(seg.clone());
+                match self.new_types.first().unwrap() {
+                    SubstType::Path(p) => {
+                        let mut new_seg = p.segments.clone();
+                        for seg in path.segments.iter().skip(length) {
+                            new_seg.push(seg.clone());
+                        }
+                        // check if orphan arguments:
+                        //     #[trait_gen(gen::T -> mod::Name, ...) { ... gen::T<'_> ... }
+                        //     path     = gen :: T   <'_>    len = 2, subst enabled
+                        //     new_path = mod :: Name        len = 2
+                        //  => new_seg  = mod :: Name<'_>
+                        let mut nth_new_seg = new_seg.last_mut().unwrap();
+                        let nth_seg = path.segments.iter().nth(length - 1).unwrap();
+                        if nth_new_seg.arguments.is_empty() && !nth_seg.arguments.is_empty() {
+                            nth_new_seg.arguments = nth_seg.arguments.clone();
+                        }
+                        path.segments = new_seg;
+                        if VERBOSE { println!(" -> {}", pathname(path)); }
+                    }
+                    SubstType::Type(ty) => {
+                        if VERBOSE { println!(" -> Path '{}' cannot be substituted by type '{}'", path_name, pathname(ty)); }
+                        // abort!(ty.span(), "Path '{}' cannot be substituted by type '{}'", path_name, pathname(ty));
+                    }
                 }
-                // check if orphan arguments:
-                //     #[trait_gen(gen::T -> mod::Name, ...) { ... gen::T<'_> ... }
-                //     path     = gen :: T   <'_>    len = 2, subst enabled
-                //     new_path = mod :: Name        len = 2
-                //  => new_seg  = mod :: Name<'_>
-                let mut nth_new_seg = new_seg.last_mut().unwrap();
-                let nth_seg = path.segments.iter().nth(length - 1).unwrap();
-                if nth_new_seg.arguments.is_empty() && !nth_seg.arguments.is_empty() {
-                    nth_new_seg.arguments = nth_seg.arguments.clone();
-                }
-                path.segments = new_seg;
-                if VERBOSE { println!(" -> {}", pathname(path)); }
             } else {
                 if VERBOSE { println!("disabled path: {}", path_name); }
                 syn::visit_mut::visit_path_mut(self, path);
@@ -580,40 +615,65 @@ impl VisitMut for Types {
         }
         syn::visit_mut::visit_attribute_mut(self, node);
     }
+
+    fn visit_type_mut(&mut self, node: &mut Type) {
+        if !self.is_path {
+            match node {
+                Type::Path(TypePath { path, .. }) => {
+                    let path_name = pathname(path);
+                    let path_length = path.segments.len();
+                    if let Some(length) = path_prefix_len(&self.current_type, path) {
+                        if length < path_length || self.substitution_enabled() {
+                            if VERBOSE { println!("type path: {} length = {}", path_name, length); }
+                            let SubstType::Type(ty) = self.new_types.first().unwrap() else { panic!("found path item instead of type in SubstType") };
+                            *node = ty.clone();
+                        }
+                    } else {
+                        syn::visit_mut::visit_type_mut(self, node);
+                    }
+                }
+                _ => syn::visit_mut::visit_type_mut(self, node),
+            }
+        } else {
+            syn::visit_mut::visit_type_mut(self, node);
+        }
+        //*node = Type::Path(TypePath { qself: None, path: Path { leading_colon: None, segments: Default::default() } } );
+    }
 }
 
 /// Attribute argument parser
 impl Parse for Types {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let first = input.parse::<Path>()?;
+        let current_type = input.parse::<Path>()?;
+        let types: Vec<Type>;
+        let current_defined: bool;
         if input.peek(Token![->]) {
-            let current_type = first;
             input.parse::<Token![->]>()?;
-            // let vars = Punctuated::<Path, Token![,]>::parse_terminated(input)?;
-            // if VERBOSE {
-            //     println!("Args: {}", vars_type.iter()
-            //         .map(|ty| format!("{:?}", pathname(ty)))
-            //         .collect::<Vec<_>>().join(", "));
-            // }
-            // let vars = vars.into_iter()
-            //     .filter(|ty| matches!(ty, Type::Path(_)))
-            //     .map(|ty| {
-            //         let Type::Path(p) = ty else { abort!(ty.span(), "expecting Type::Path, got {:?}", ty); };
-            //         p.path
-            //     });
-            // let new_types: Vec<Path> = vars.into_iter().collect();
             let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
-            let new_types: Vec<Type> = vars.into_iter().collect();
-            Ok(Types { current_type, new_types, current_defined: false, enabled: Vec::new() })
+            types = vars.into_iter().collect();
+            current_defined = false;
         } else {
             input.parse::<Token![,]>()?;
-            // let vars = Punctuated::<Path, Token![,]>::parse_terminated(input)?;
-            // let new_types: Vec<Path> = vars.into_iter().collect();
             let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
-            let new_types: Vec<Type> = vars.into_iter().collect();
-            let current_type = first;
-            Ok(Types { current_type, new_types, current_defined: true, enabled: Vec::new() })
+            types = vars.into_iter().collect();
+            current_defined = true;
         }
+        let is_path = types.iter().all(|ty| matches!(ty, Type::Path(_)));
+        let new_types = types.into_iter()
+            .map(|ty|
+                if is_path {
+                    let Type::Path(p) = ty else { panic!("this should match Type::Path: {:?}", ty) };
+                    SubstType::Path(p.path)
+                } else {
+                    SubstType::Type(ty)
+                })
+            .collect::<Vec<_>>();
+        // if VERBOSE {
+        //     println!("args: \n{}", new_types.iter()
+        //         .map(|t| format!("- {} {}", if t.is_path() {"PATH"} else {"TYPE"}, pathname(t)))
+        //         .collect::<Vec<_>>().join("\n"));
+        // }
+        Ok(Types { current_type, new_types: new_types, current_defined, is_path, enabled: Vec::new() })
     }
 }
 
@@ -671,6 +731,15 @@ impl Turbofish for Type {
             Type::Tuple(_) => {}
             Type::Verbatim(_) => {}
             _ => {}
+        }
+    }
+}
+
+impl Turbofish for SubstType {
+    fn set_tubofish(&mut self) {
+        match self {
+            SubstType::Path(path) => path.set_tubofish(),
+            SubstType::Type(ty) => ty.set_tubofish()
         }
     }
 }
@@ -788,11 +857,14 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
         // by setting the turbofish in all replacements:
         ty.set_tubofish();
     }
-    if VERBOSE { println!("{}\ntrait_gen for {} -> {}",
-                          "=".repeat(80),
-                          pathname(&types.current_type),
-                          &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")
-                 )}
+    if VERBOSE {
+        println!("{}\ntrait_gen for {} -> {}: {}",
+                 "=".repeat(80),
+                 pathname(&types.current_type),
+                 if types.is_path { "PATH" } else { "TYPE" },
+                 &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")
+        )
+    }
     if VERBOSE { println!("\n{}\n{}", item, "-".repeat(80)); }
     let ast: File = syn::parse(item).unwrap();
     let mut output = TokenStream::new();
