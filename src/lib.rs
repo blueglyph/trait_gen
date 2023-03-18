@@ -325,30 +325,20 @@ use proc_macro::TokenStream;
 use std::fmt::{Display, Formatter};
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parenthesized};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Colon2;
 use syn::visit_mut::VisitMut;
 
-const VERBOSE: bool = true;
+const VERBOSE: bool = false;
 
 #[derive(Debug)]
 enum SubstType {
     Path(Path),
     Type(Type)
 }
-
-// impl SubstType {
-//     fn is_path(&self) -> bool {
-//         if let SubstType::Path(_) = self { true } else { false }
-//     }
-//
-//     fn is_type(&self) -> bool {
-//         !self.is_path()
-//     }
-// }
 
 impl ToTokens for SubstType {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
@@ -360,32 +350,34 @@ impl ToTokens for SubstType {
 }
 
 #[derive(Debug)]
-struct Types {
+struct Subst {
     current_type: Path,
     new_types: Vec<SubstType>,
-    current_defined: bool,
+    legacy: bool,
     is_path: bool,
     can_subst_path: Vec<bool>, // cannot substitue paths when last is false (can substitute if empty)
-    // can_subst_tokens: Vec<bool>, // cannot substitue tokens when last is false (can substitute if empty)
 }
 
-impl Types {
+#[derive(Debug)]
+struct AttrParams {
+    current_type: Path,
+    types: Vec<Type>,
+    legacy: bool,
+}
+
+impl Subst {
     fn can_subst_path(&self) -> bool {
         *self.can_subst_path.last().unwrap_or(&true)
     }
-
-    // fn can_subst_tokens(&self) -> bool {
-    //     *self.can_subst_tokens.last().unwrap_or(&true)
-    // }
 }
 
-impl Display for Types {
+impl Display for Subst {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "PathTypes {{\n  current_types: {}\n  new_types: {}\n  current_defined: {}\n  enabled:  {}\n}}",
-            pathname(&self.current_type),
-            self.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
-            self.current_defined.to_string(),
-            self.can_subst_path.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
+               pathname(&self.current_type),
+               self.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
+               self.legacy.to_string(),
+               self.can_subst_path.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
         )
     }
 }
@@ -475,48 +467,7 @@ fn replace_str(string: &str, pat: &str, repl: &str) -> Option<String> {
     }
 }
 
-fn replace_str_boundary(string: &str, pat: &str, repl: &str) -> Option<String> {
-    fn boundary(s: &str, pos: usize) -> bool {
-        let s = s.as_bytes();
-        pos == 0 || pos >= s.len()
-            || s[pos].is_ascii_punctuation() || s[pos].is_ascii_whitespace()
-            || ( (s[pos - 1].is_ascii_punctuation() || s[pos - 1].is_ascii_whitespace())
-                 && s[pos - 1] != b':' && s[pos - 1] != b'.' )
-    }
-    let index = string.find(pat);
-    if let Some(mut index) = index {
-        let pat_len = pat.len();
-        let mut last_index = 0;
-        let mut n = 0;
-        let mut dest = String::with_capacity(string.len() * 2);
-        loop {
-            if boundary(string, index) && boundary(string, index + pat_len) {
-                n += 1;
-                dest.push_str(&string[last_index..index]);
-                dest.push_str(repl);
-                index = index + pat_len;
-            } else {
-                index += 1;
-                dest.push_str(&string[last_index..index]);
-            }
-            last_index = index;
-            if let Some(i) = string[index..].find(pat) {
-                index += i;
-            } else {
-                if n > 0 {
-                    dest.push_str(&string[last_index..]);
-                    break Some(dest);
-                } else {
-                    break None;
-                }
-            }
-        }
-    } else {
-        None
-    }
-}
-
-impl VisitMut for Types {
+impl VisitMut for Subst {
     fn visit_expr_mut(&mut self, node: &mut Expr) {
         let mut enabled = self.can_subst_path();
         match node {
@@ -664,23 +615,12 @@ impl VisitMut for Types {
                 }
                 "trait_gen" => {
                     if VERBOSE { println!("#trait_gen: '{}' in '{}'", pathname(&self.current_type), pathname(&node.tokens)); }
-
-
-
-
-                    if let Some(ts_str) = replace_str_boundary(
-                        &pathname(&node.tokens),
-                        &format!("{}", pathname(&self.current_type)),
-                        &pathname(self.new_types.first().unwrap())
-                    ) {
-                        let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing attribute failed: {}", ts_str));
-                        node.tokens = new_ts;
-                        println!("=> {}", pathname(&node.tokens));
-                    }
+                    let args: TokenStream = node.tokens.clone().into();
+                    let new_args = attr_replace(self, args);
+                    let new_group = proc_macro2::Group::new(proc_macro2::Delimiter::Parenthesis, new_args.into());
+                    if VERBOSE { println!("=> #trait_gen: {}", pathname(&new_group)); }
+                    node.tokens = new_group.into_token_stream();
                     return
-                    // self.can_subst_tokens.push(true);
-                    // syn::visit_mut::visit_attribute_mut(self, node);
-                    // self.can_subst_tokens.pop();
                 }
                 _ => ()
             }
@@ -709,27 +649,72 @@ impl VisitMut for Types {
         } else {
             syn::visit_mut::visit_type_mut(self, node);
         }
-        //*node = Type::Path(TypePath { qself: None, path: Path { leading_colon: None, segments: Default::default() } } );
     }
 }
 
-/// Attribute argument parser
-impl Parse for Types {
-    fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let current_type = input.parse::<Path>()?;
-        let types: Vec<Type>;
-        let current_defined: bool;
-        if input.peek(Token![->]) {
-            input.parse::<Token![->]>()?;
-            let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
-            types = vars.into_iter().collect();
-            current_defined = false;
-        } else {
-            input.parse::<Token![,]>()?;
-            let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
-            types = vars.into_iter().collect();
-            current_defined = true;
+///
+fn attr_replace(subst: &mut Subst, args: TokenStream) -> TokenStream {
+    let tokens = args.clone();
+    let mut types = parse_macro_input!(tokens as AttrParams);
+    let mut output = TokenStream::new();
+    if !types.legacy {
+        let gen = types.current_type;
+        output.extend(TokenStream::from(quote!(#gen -> )));
+    }
+    let mut first = true;
+    for ty in &mut types.types {
+        if !first {
+            output.extend(TokenStream::from(quote!(, )));
         }
+        subst.visit_type_mut(ty);
+        output.extend(TokenStream::from(quote!(#ty)));
+        first = false;
+    }
+    output
+}
+
+/// Parses the attribute parameters.
+///
+/// There are two syntaxes:
+/// - `T -> Type1, Type2, Type3`
+/// - `Type1, Type2, Type3` (legacy format)
+///
+/// Returns (path, types, legacy), where
+/// - `path` is the generic parameter `T` (or `Type1` in legacy format)
+/// - `types` is a vector of parsed `Type` items: `Type1, Type2, Type3` (or `Type2, Type3` in legacy)
+/// - `legacy` is true if the legacy format is used
+fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, bool)> {
+    let current_type = input.parse::<Path>()?;
+    let types: Vec<Type>;
+    let legacy: bool;
+    if input.peek(Token![->]) {
+        input.parse::<Token![->]>()?;
+        let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
+        types = vars.into_iter().collect();
+        legacy = false;
+    } else {
+        input.parse::<Token![,]>()?;
+        let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
+        types = vars.into_iter().collect();
+        legacy = true;
+    }
+    Ok((current_type, types, legacy))
+}
+
+/// Attribute parser used for inner attributes
+impl Parse for AttrParams {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let content;
+        parenthesized!(content in input);
+        let (current_type, types, legacy) = parse_parameters(&content.into())?;
+        Ok(AttrParams { current_type, types, legacy })
+    }
+}
+
+/// Attribute argument parser used for the procedural macro being processed
+impl Parse for Subst {
+    fn parse(input: ParseStream) -> syn::parse::Result<Self> {
+        let (current_type, types, legacy) = parse_parameters(input)?;
         let is_path = types.iter().all(|ty| matches!(ty, Type::Path(_)));
         let new_types = types.into_iter()
             .map(|ty|
@@ -740,12 +725,7 @@ impl Parse for Types {
                     SubstType::Type(ty)
                 })
             .collect::<Vec<_>>();
-        // if VERBOSE {
-        //     println!("args: \n{}", new_types.iter()
-        //         .map(|t| format!("- {} {}", if t.is_path() {"PATH"} else {"TYPE"}, pathname(t)))
-        //         .collect::<Vec<_>>().join("\n"));
-        // }
-        Ok(Types { current_type, new_types: new_types, current_defined, is_path, can_subst_path: Vec::new() })
+        Ok(Subst { current_type, new_types: new_types, legacy, is_path, can_subst_path: Vec::new() })
     }
 }
 
@@ -923,7 +903,7 @@ impl Turbofish for SubstType {
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
-    let mut types = parse_macro_input!(args as Types);
+    let mut types = parse_macro_input!(args as Subst);
     for ty in types.new_types.iter_mut() {
         // the turbofish is necessary in expressions, and not an error elsewhere, we simplify
         // by setting the turbofish in all replacements:
@@ -948,7 +928,7 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
                 types.can_subst_path.len(), pathname(types.new_types.first().unwrap()));
         types.new_types.remove(0);
     }
-    if types.current_defined {
+    if types.legacy {
         output.extend(TokenStream::from(quote!(#ast)));
     }
     if VERBOSE { println!("end trait_gen for {}\n{}", pathname(&types.current_type), "-".repeat(80)); }

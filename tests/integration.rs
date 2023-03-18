@@ -10,7 +10,7 @@
 // or
 //     #[trait_gen(Meter -> Meter, Foot, Mile)]
 // -----------------------------------------------------------------------------
-/*
+
 mod type_cases_01 {
     use trait_gen::trait_gen;
 
@@ -90,7 +90,7 @@ mod type_cases_02 {
         assert_eq!(show_log2(box_a), 2);
     }
 }
-*/
+
 mod type_cases_03 {
     use trait_gen::trait_gen;
 
@@ -98,10 +98,10 @@ mod type_cases_03 {
         fn name(&self) -> String;
     }
 
-    // #[trait_gen(U -> i8, u8, i16, u16, i32, u32, i64, u64, i128, u128)]
-    // #[trait_gen(T -> &[U; N], &mut [U; N], Box<[U; N]>)]
-    #[trait_gen(my::U -> i32)]
-    #[trait_gen(T -> &[my:: U; N])]
+    // #[trait_gen(my::U -> i32)]
+    // #[trait_gen(T -> &[my:: U; N], &mut [my::U; N])]
+    #[trait_gen(U -> i8, u8, i16, u16, i32, u32, i64, u64, i128, u128)]
+    #[trait_gen(T -> &[U; N], &mut [U; N], Box<[U; N]>)]
     impl<const N: usize> Name for T {
         fn name(&self) -> String {
             format!("slice of ${T} with N = {}", N)
@@ -115,19 +115,19 @@ mod type_cases_03 {
     #[test]
     fn test() {
         let a = &[10, 20];
-        // let b = &mut [10_u32, 15, 20];
-        // let c = Box::new([5_u64, 6, 7, 8]);
+        let b = &mut [10_u32, 15, 20];
+        let c = Box::new([5_u64, 6, 7, 8]);
 
         assert_eq!(a.name(), "slice of &[i32;N] with N = 2");
-        // assert_eq!(b.name(), "mut slice of 3 u32");
-        // assert_eq!(c.name(), "box of 4 u64");
+        assert_eq!(b.name(), "slice of &mut [u32;N] with N = 3");
+        assert_eq!(c.name(), "slice of Box::<[u64;N]> with N = 4");
 
         assert_eq!(show_name(&a), "slice of &[i32;N] with N = 2");
-        // assert_eq!(show_name(&b), "mut slice of 3 u32");
-        // assert_eq!(show_name(&c), "box of 4 u64");
+        assert_eq!(show_name(&b), "slice of &mut [u32;N] with N = 3");
+        assert_eq!(show_name(&c), "slice of Box::<[u64;N]> with N = 4");
     }
 }
-/*
+
 mod type_cases_04 {
     use std::ops::Deref;
     use trait_gen::trait_gen;
@@ -836,4 +836,3 @@ mod ex03b {
         assert_eq!(h.into_u64(), 10_u64);
     }    
 }
-*/
