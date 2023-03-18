@@ -70,19 +70,19 @@
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
-//! # struct type1; struct type2; struct type3;
+//! # struct Type1; struct Type2; struct Type3;
 //! # trait Trait {}
-//! #[trait_gen(T -> type1, type2, type3)]
+//! #[trait_gen(T -> Type1, Type2, Type3)]
 //! impl Trait for T {
 //!     // ...
 //! }
 //! ```
 //! This attribute successively substitutes the `T` type parameter, which is used as a
-//! type in the attached source code, with each of the following types (`type1`, `type2`, `type3`)
+//! type in the attached source code, with each of the following types (`Type1`, `Type2`, `Type3`)
 //! to generate all the implementations.
 //!
 //! All paths beginning with `T` in the code have this segment replaced. For example,
-//! `T::default()` generates `type1::default()`, `type2::default()` and so on, but
+//! `T::default()` generates `Type1::default()`, `Type2::default()` and so on, but
 //! `super::T` is unchanged.
 //!
 //! The code must of course be compatible with all the types, or the compiler will trigger the
@@ -118,24 +118,24 @@
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
-//! # struct type1; struct type2; struct type3;
+//! # struct Type1; struct Type2; struct Type3;
 //! # trait Trait {}
-//! #[trait_gen(type1, type2, type3)]
-//! impl Trait for type1 {
+//! #[trait_gen(Type1, Type2, Type3)]
+//! impl Trait for Type1 {
 //!     // ...
 //! }
 //! ```
 //!
-//! Here, `type2` and `type3` are literally substituted for `type1` to generate their implementation,
-//! then the original code is implemented for `type1`. This is a shortcut for the equivalent
+//! Here, `Type2` and `Type3` are literally substituted for `Type1` to generate their implementation,
+//! then the original code is implemented for `Type1`. This is a shortcut for the equivalent
 //! attribute with the other format:
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
-//! # struct type1; struct type2; struct type3;
+//! # struct Type1; struct Type2; struct Type3;
 //! # trait Trait {}
-//! #[trait_gen(type1 -> type2, type3, type1)]
-//! impl Trait for type1 {
+//! #[trait_gen(Type1 -> Type2, Type3, Type1)]
+//! impl Trait for Type1 {
 //!     // ...
 //! }
 //! ```
@@ -564,6 +564,7 @@ impl VisitMut for Types {
                     }
                     SubstType::Type(ty) => {
                         if VERBOSE { println!(" -> Path '{}' cannot be substituted by type '{}'", path_name, pathname(ty)); }
+                        // note: emit-warning is unstable...
                         // abort!(ty.span(), "Path '{}' cannot be substituted by type '{}'", path_name, pathname(ty));
                     }
                 }

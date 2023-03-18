@@ -10,7 +10,8 @@
 // or
 //     #[trait_gen(Meter -> Meter, Foot, Mile)]
 // -----------------------------------------------------------------------------
-mod type_cases_00 {
+/*
+mod type_cases_01 {
     use trait_gen::trait_gen;
 
     trait MyLog {
@@ -48,8 +49,8 @@ mod type_cases_00 {
         assert_eq!(show_log2(box_a), 2);
     }
 }
-/*
-mod type_cases_01 {
+
+mod type_cases_02 {
     use trait_gen::trait_gen;
 
     trait MyLog {
@@ -62,32 +63,10 @@ mod type_cases_01 {
             T::BITS - 1 -self.leading_zeros()
         }
     }
-    // doesn't work yet:
-    //
-    // #[trait_gen(T -> &U, &mut U, Box<U>)]
-    // #[trait_gen(U -> u8, u16, u32, u64, u128)]
-    // impl MyLog for T {
-    //     fn my_log2(self) -> u32 {
-    //         MyLog::my_log2(*self)
-    //     }
-    // }
 
-    #[trait_gen(T -> u8, u16, u32, u64, u128)]
-    impl MyLog for &T {
-        fn my_log2(self) -> u32 {
-            MyLog::my_log2(*self)
-        }
-    }
-
-    #[trait_gen(T -> u8, u16, u32, u64, u128)]
-    impl MyLog for &mut T {
-        fn my_log2(self) -> u32 {
-            MyLog::my_log2(*self)
-        }
-    }
-
-    #[trait_gen(T -> u8, u16, u32, u64, u128)]
-    impl MyLog for Box<T> {
+    #[trait_gen(T -> &U, &mut U, Box<U>)]
+    #[trait_gen(U -> u8, u16, u32, u64, u128)]
+    impl MyLog for T {
         fn my_log2(self) -> u32 {
             MyLog::my_log2(*self)
         }
@@ -111,42 +90,21 @@ mod type_cases_01 {
         assert_eq!(show_log2(box_a), 2);
     }
 }
-
-mod type_cases_02 {
+*/
+mod type_cases_03 {
     use trait_gen::trait_gen;
 
     trait Name {
         fn name(&self) -> String;
     }
 
-    // doesn't work yet:
-    //
-    // #[trait_gen(T -> &[U; N], &mut [U; N], Box<[U; N]>)]
     // #[trait_gen(U -> i8, u8, i16, u16, i32, u32, i64, u64, i128, u128)]
-    // impl<const N: usize> Name for T {
-    //     fn name(&self) -> String {
-    //         format!("slice of {} ${T}", N)
-    //     }
-    // }
-
-    #[trait_gen(T -> i8, u8, i16, u16, i32, u32, i64, u64, i128, u128)]
-    impl<const N: usize> Name for &[T; N] {
+    // #[trait_gen(T -> &[U; N], &mut [U; N], Box<[U; N]>)]
+    #[trait_gen(my::U -> i32)]
+    #[trait_gen(T -> &[my::U; N])]
+    impl<const N: usize> Name for T {
         fn name(&self) -> String {
-            format!("slice of {} ${T}", N)
-        }
-    }
-
-    #[trait_gen(T -> i8, u8, i16, u16, i32, u32, i64, u64, i128, u128)]
-    impl<const N: usize> Name for &mut [T; N] {
-        fn name(&self) -> String {
-            format!("mut slice of {} ${T}", N)
-        }
-    }
-
-    #[trait_gen(T -> i8, u8, i16, u16, i32, u32, i64, u64, i128, u128)]
-    impl<const N: usize> Name for Box<[T; N]> {
-        fn name(&self) -> String {
-            format!("box of {} ${T}", N)
+            format!("slice of ${T} with N = {}", N)
         }
     }
 
@@ -157,20 +115,20 @@ mod type_cases_02 {
     #[test]
     fn test() {
         let a = &[10, 20];
-        let b = &mut [10_u32, 15, 20];
-        let c = Box::new([5_u64, 6, 7, 8]);
+        // let b = &mut [10_u32, 15, 20];
+        // let c = Box::new([5_u64, 6, 7, 8]);
 
-        assert_eq!(a.name(), "slice of 2 i32");
-        assert_eq!(b.name(), "mut slice of 3 u32");
-        assert_eq!(c.name(), "box of 4 u64");
+        assert_eq!(a.name(), "slice of &[i32;N] with N = 2");
+        // assert_eq!(b.name(), "mut slice of 3 u32");
+        // assert_eq!(c.name(), "box of 4 u64");
 
-        assert_eq!(show_name(&a), "slice of 2 i32");
-        assert_eq!(show_name(&b), "mut slice of 3 u32");
-        assert_eq!(show_name(&c), "box of 4 u64");
+        assert_eq!(show_name(&a), "slice of &[i32;N] with N = 2");
+        // assert_eq!(show_name(&b), "mut slice of 3 u32");
+        // assert_eq!(show_name(&c), "box of 4 u64");
     }
 }
-
-mod type_cases_03 {
+/*
+mod type_cases_04 {
     use std::ops::Deref;
     use trait_gen::trait_gen;
 
@@ -184,24 +142,11 @@ mod type_cases_03 {
         fn negate(self) -> Self::Output;
     }
 
-    // #[trait_gen(T -> Meter, Foot)]
-    // impl Negate for T {
-    //     type Output = T;
-    //     fn negate(self) -> Self::Output {
-    //         T(-self.0)
-    //     }
-    // }
-
-    impl Negate for Meter {
-        type Output = Meter;
+    #[trait_gen(T -> Meter, Foot)]
+    impl Negate for T {
+        type Output = T;
         fn negate(self) -> Self::Output {
-            Meter(-self.0)
-        }
-    }
-    impl Negate for Foot {
-        type Output = Foot;
-        fn negate(self) -> Self::Output {
-            Foot(-self.0)
+            T(-self.0)
         }
     }
 
