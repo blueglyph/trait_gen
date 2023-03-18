@@ -332,7 +332,7 @@ use syn::spanned::Spanned;
 use syn::token::Colon2;
 use syn::visit_mut::VisitMut;
 
-const VERBOSE: bool = false;
+const VERBOSE: bool = true;
 
 #[derive(Debug)]
 enum SubstType {
@@ -365,13 +365,18 @@ struct Types {
     new_types: Vec<SubstType>,
     current_defined: bool,
     is_path: bool,
-    enabled: Vec<bool> // cannot substitue when last is false (can substitute if empty)
+    can_subst_path: Vec<bool>, // cannot substitue paths when last is false (can substitute if empty)
+    // can_subst_tokens: Vec<bool>, // cannot substitue tokens when last is false (can substitute if empty)
 }
 
 impl Types {
-    fn substitution_enabled(&self) -> bool {
-        *self.enabled.last().unwrap_or(&true)
+    fn can_subst_path(&self) -> bool {
+        *self.can_subst_path.last().unwrap_or(&true)
     }
+
+    // fn can_subst_tokens(&self) -> bool {
+    //     *self.can_subst_tokens.last().unwrap_or(&true)
+    // }
 }
 
 impl Display for Types {
@@ -380,7 +385,7 @@ impl Display for Types {
             pathname(&self.current_type),
             self.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
             self.current_defined.to_string(),
-            self.enabled.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
+            self.can_subst_path.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
         )
     }
 }
@@ -395,6 +400,8 @@ fn pathname<T: ToTokens>(path: &T) -> String {
         .replace("& ", "&")
         .replace(", ", ",")
         .replace(") ", ")")
+        .replace(" ;", ";")
+        .replace("; ", ";")
 }
 
 trait NodeMatch {
@@ -468,9 +475,50 @@ fn replace_str(string: &str, pat: &str, repl: &str) -> Option<String> {
     }
 }
 
+fn replace_str_boundary(string: &str, pat: &str, repl: &str) -> Option<String> {
+    fn boundary(s: &str, pos: usize) -> bool {
+        let s = s.as_bytes();
+        pos == 0 || pos >= s.len()
+            || s[pos].is_ascii_punctuation() || s[pos].is_ascii_whitespace()
+            || ( (s[pos - 1].is_ascii_punctuation() || s[pos - 1].is_ascii_whitespace())
+                 && s[pos - 1] != b':' && s[pos - 1] != b'.' )
+    }
+    let index = string.find(pat);
+    if let Some(mut index) = index {
+        let pat_len = pat.len();
+        let mut last_index = 0;
+        let mut n = 0;
+        let mut dest = String::with_capacity(string.len() * 2);
+        loop {
+            if boundary(string, index) && boundary(string, index + pat_len) {
+                n += 1;
+                dest.push_str(&string[last_index..index]);
+                dest.push_str(repl);
+                index = index + pat_len;
+            } else {
+                index += 1;
+                dest.push_str(&string[last_index..index]);
+            }
+            last_index = index;
+            if let Some(i) = string[index..].find(pat) {
+                index += i;
+            } else {
+                if n > 0 {
+                    dest.push_str(&string[last_index..]);
+                    break Some(dest);
+                } else {
+                    break None;
+                }
+            }
+        }
+    } else {
+        None
+    }
+}
+
 impl VisitMut for Types {
     fn visit_expr_mut(&mut self, node: &mut Expr) {
-        let mut enabled = self.substitution_enabled();
+        let mut enabled = self.can_subst_path();
         match node {
             // allows substitutions for the nodes below, and until a new Expr is met:
             Expr::Call(_) => enabled = true,
@@ -485,9 +533,9 @@ impl VisitMut for Types {
             // all other expressions in general must disable substitution:
             _ => enabled = false,
         };
-        self.enabled.push(enabled);
+        self.can_subst_path.push(enabled);
         syn::visit_mut::visit_expr_mut(self, node);
-        self.enabled.pop();
+        self.can_subst_path.pop();
     }
 
     fn visit_generics_mut(&mut self, i: &mut Generics) {
@@ -541,7 +589,7 @@ impl VisitMut for Types {
             // self.substitution_enabled() == false, we must distinguish two cases:
             // - U::MAX must be replaced (length < path_length)
             // - U or U.add(1) must stay
-            if length < path_length || self.substitution_enabled() {
+            if length < path_length || self.can_subst_path() {
                 if VERBOSE { print!("path: {} length = {}", path_name, length); }
                 match self.new_types.first().unwrap() {
                     SubstType::Path(p) => {
@@ -579,11 +627,11 @@ impl VisitMut for Types {
     }
 
     fn visit_type_path_mut(&mut self, typepath: &mut TypePath) {
-        self.enabled.push(true);
+        self.can_subst_path.push(true);
         let TypePath { path, .. } = typepath;
         if VERBOSE { println!("typepath: {}", pathname(path)); }
         syn::visit_mut::visit_type_path_mut(self, typepath);
-        self.enabled.pop();
+        self.can_subst_path.pop();
     }
 
     fn visit_macro_mut(&mut self, node: &mut Macro) {
@@ -602,16 +650,39 @@ impl VisitMut for Types {
 
     fn visit_attribute_mut(&mut self, node: &mut Attribute) {
         if let Some(PathSegment { ident, .. }) = node.path.segments.first() {
-            if ident.to_string() == "doc" {
-                if let Some(ts_str) = replace_str(
-                    &node.tokens.to_string(),
-                    &format!("${{{}}}", pathname(&self.current_type)),
-                    &pathname(self.new_types.first().unwrap()))
-                {
-                    let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing attribute failed: {}", ts_str));
-                    node.tokens = new_ts;
+            match ident.to_string().as_str() {
+                "doc" => {
+                    if let Some(ts_str) = replace_str(
+                        &node.tokens.to_string(),
+                        &format!("${{{}}}", pathname(&self.current_type)),
+                        &pathname(self.new_types.first().unwrap()))
+                    {
+                        let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing attribute failed: {}", ts_str));
+                        node.tokens = new_ts;
+                    }
+                    return
                 }
-                return
+                "trait_gen" => {
+                    if VERBOSE { println!("#trait_gen: '{}' in '{}'", pathname(&self.current_type), pathname(&node.tokens)); }
+
+
+
+
+                    if let Some(ts_str) = replace_str_boundary(
+                        &pathname(&node.tokens),
+                        &format!("{}", pathname(&self.current_type)),
+                        &pathname(self.new_types.first().unwrap())
+                    ) {
+                        let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing attribute failed: {}", ts_str));
+                        node.tokens = new_ts;
+                        println!("=> {}", pathname(&node.tokens));
+                    }
+                    return
+                    // self.can_subst_tokens.push(true);
+                    // syn::visit_mut::visit_attribute_mut(self, node);
+                    // self.can_subst_tokens.pop();
+                }
+                _ => ()
             }
         }
         syn::visit_mut::visit_attribute_mut(self, node);
@@ -624,7 +695,7 @@ impl VisitMut for Types {
                     let path_name = pathname(path);
                     let path_length = path.segments.len();
                     if let Some(length) = path_prefix_len(&self.current_type, path) {
-                        if length < path_length || self.substitution_enabled() {
+                        if length < path_length || self.can_subst_path() {
                             if VERBOSE { println!("type path: {} length = {}", path_name, length); }
                             let SubstType::Type(ty) = self.new_types.first().unwrap() else { panic!("found path item instead of type in SubstType") };
                             *node = ty.clone();
@@ -674,7 +745,7 @@ impl Parse for Types {
         //         .map(|t| format!("- {} {}", if t.is_path() {"PATH"} else {"TYPE"}, pathname(t)))
         //         .collect::<Vec<_>>().join("\n"));
         // }
-        Ok(Types { current_type, new_types: new_types, current_defined, is_path, enabled: Vec::new() })
+        Ok(Types { current_type, new_types: new_types, current_defined, is_path, can_subst_path: Vec::new() })
     }
 }
 
@@ -873,8 +944,8 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
         let mut modified_ast = ast.clone();
         types.visit_file_mut(&mut modified_ast);
         output.extend(TokenStream::from(quote!(#modified_ast)));
-        assert!(types.enabled.is_empty(), "self.enabled has {} entries after type {}",
-                types.enabled.len(), pathname(types.new_types.first().unwrap()));
+        assert!(types.can_subst_path.is_empty(), "self.enabled has {} entries after type {}",
+                types.can_subst_path.len(), pathname(types.new_types.first().unwrap()));
         types.new_types.remove(0);
     }
     if types.current_defined {

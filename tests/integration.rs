@@ -101,7 +101,7 @@ mod type_cases_03 {
     // #[trait_gen(U -> i8, u8, i16, u16, i32, u32, i64, u64, i128, u128)]
     // #[trait_gen(T -> &[U; N], &mut [U; N], Box<[U; N]>)]
     #[trait_gen(my::U -> i32)]
-    #[trait_gen(T -> &[my::U; N])]
+    #[trait_gen(T -> &[my:: U; N])]
     impl<const N: usize> Name for T {
         fn name(&self) -> String {
             format!("slice of ${T} with N = {}", N)
