@@ -614,12 +614,10 @@ impl VisitMut for Subst {
                     return
                 }
                 "trait_gen" => {
-                    if VERBOSE { println!("#trait_gen: '{}' in '{}'", pathname(&self.current_type), pathname(&node.tokens)); }
-                    let args: TokenStream = node.tokens.clone().into();
-                    let new_args = attr_replace(self, args);
-                    let new_group = proc_macro2::Group::new(proc_macro2::Delimiter::Parenthesis, new_args.into());
-                    if VERBOSE { println!("=> #trait_gen: {}", pathname(&new_group)); }
-                    node.tokens = new_group.into_token_stream();
+                    if VERBOSE { println!("#trait_gen: '{}' in {}", pathname(&self.current_type), pathname(&node.tokens)); }
+                    let new_args = process_attr_args(self, node.tokens.clone());
+                    if VERBOSE { println!("=> #trait_gen: {}", pathname(&new_args)); }
+                    node.tokens = new_args;
                     return
                 }
                 _ => ()
@@ -652,25 +650,46 @@ impl VisitMut for Subst {
     }
 }
 
+/// Perform substitutions in the parameters of the inner attribute if necessary.
 ///
-fn attr_replace(subst: &mut Subst, args: TokenStream) -> TokenStream {
-    let tokens = args.clone();
-    let mut types = parse_macro_input!(tokens as AttrParams);
-    let mut output = TokenStream::new();
-    if !types.legacy {
-        let gen = types.current_type;
-        output.extend(TokenStream::from(quote!(#gen -> )));
-    }
-    let mut first = true;
-    for ty in &mut types.types {
-        if !first {
-            output.extend(TokenStream::from(quote!(, )));
+/// `
+/// #[trait_gen(U -> i32, u32)]     // <== we are processing this attribute
+/// #[trait_gen(T -> &U, &mut U)]   // <== change 'U' to 'i32' and 'u32'
+/// impl Neg for T { /* .... */ }
+/// `
+fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+
+    /// The parentheses are removed during parsing and must be put back. But a function using
+    /// `parse_macro_input!` must return a `proc_macro::TokenStream`, and it is more difficult to
+    /// add parentheses with that type than with `proc_macro2::TokenStream`. That's why we do the
+    /// parsing in this inner function, and put the parentheses back in the outer function.
+    fn process_attr_args(subst: &mut Subst, args: TokenStream) -> TokenStream {
+        let tokens = args.clone();
+        let mut types = parse_macro_input!(tokens as AttrParams);
+        let mut output = TokenStream::new();
+        if !types.legacy {
+            let gen = types.current_type;
+            output.extend(TokenStream::from(quote!(#gen -> )));
         }
-        subst.visit_type_mut(ty);
-        output.extend(TokenStream::from(quote!(#ty)));
-        first = false;
+        let mut first = true;
+        for ty in &mut types.types {
+            if !first {
+                output.extend(TokenStream::from(quote!(, )));
+            }
+            // checks if substitutions must be made in that parameter:
+            subst.visit_type_mut(ty);
+            
+            output.extend(TokenStream::from(quote!(#ty)));
+            first = false;
+        }
+        output
     }
-    output
+
+    // performs the substitution:
+    let new_args = process_attr_args(subst, args.into());
+
+    // puts the parentheses back and returns the token stream:
+    proc_macro2::Group::new(proc_macro2::Delimiter::Parenthesis, new_args.into()).into_token_stream()
 }
 
 /// Parses the attribute parameters.

@@ -98,8 +98,6 @@ mod type_cases_03 {
         fn name(&self) -> String;
     }
 
-    // #[trait_gen(my::U -> i32)]
-    // #[trait_gen(T -> &[my:: U; N], &mut [my::U; N])]
     #[trait_gen(U -> i8, u8, i16, u16, i32, u32, i64, u64, i128, u128)]
     #[trait_gen(T -> &[U; N], &mut [U; N], Box<[U; N]>)]
     impl<const N: usize> Name for T {
