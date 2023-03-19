@@ -128,6 +128,7 @@ mod type_cases_03 {
 }
 
 mod type_cases_04 {
+    use std::ops::Deref;
     use trait_gen::trait_gen;
 
     #[derive(Debug, PartialEq)]
