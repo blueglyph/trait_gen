@@ -99,11 +99,11 @@ mod type_cases_03 {
         fn name(&self) -> String;
     }
 
-    #[trait_gen(U -> i8, u8, i16, u16, i32, u32, i64, u64, i128, u128)]
-    #[trait_gen(T -> &[U; N], &mut [U; N], Box<[U; N]>)]
-    impl<const N: usize> Name for T {
+    #[trait_gen(my::U -> i8, u8, i16, u16, i32, u32, i64, u64, i128, u128)]
+    #[trait_gen(my::T -> &[my::U; N], &mut [my::U; N], Box<[my::U; N]>)]
+    impl<const N: usize> Name for my::T {
         fn name(&self) -> String {
-            format!("slice of ${T} with N = {}", N)
+            format!("slice of ${my::T} with N = {}", N)
         }
     }
 
@@ -128,7 +128,6 @@ mod type_cases_03 {
 }
 
 mod type_cases_04 {
-    use std::ops::Deref;
     use trait_gen::trait_gen;
 
     #[derive(Debug, PartialEq)]
