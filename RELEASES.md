@@ -1,10 +1,32 @@
+# 0.2.0 (2023-03-19)
+
+- add general type substitution:
+  ```rust
+  #[trait_gen(my::T -> &i32, &mut i32, Box<i32>)]
+  impl MyLog for my::T {
+      fn my_log2(self) -> u32 {
+          MyLog::my_log2(*self)
+      }
+  }
+  ```
+- allow substitution in inner `trait_gen` attributes, so that their order doesn't matter:
+  ```rust
+  #[trait_gen(U -> u8, u16, u32, u64, u128)]
+  #[trait_gen(T -> &U, &mut U, Box<U>)]
+  impl MyLog for T {
+      fn my_log2(self) -> u32 {
+          MyLog::my_log2(*self)
+      }
+  }
+  ```
+
 # 0.1.7 (2023-03-07)
 
 - fix bug in multisegment path substitution
 
 # 0.1.6 (2023-03-06)
 
-- add multi-segment paths in parameters
+- add multi-segment paths in parameters:
   ```rust
   #[trait_gen(inner::U -> super::Meter<f32>, super::Foot<f32>)]
   impl Add for inner::U {
