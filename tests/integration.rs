@@ -64,8 +64,9 @@ mod type_cases_02 {
         }
     }
 
-    #[trait_gen(T -> &U, &mut U, Box<U>)]
+    // The order of the attributes doesn't matter:
     #[trait_gen(U -> u8, u16, u32, u64, u128)]
+    #[trait_gen(T -> &U, &mut U, Box<U>)]
     impl MyLog for T {
         fn my_log2(self) -> u32 {
             MyLog::my_log2(*self)

@@ -325,7 +325,7 @@ use proc_macro::TokenStream;
 use std::fmt::{Display, Formatter};
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parenthesized};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parenthesized, parse2};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -658,38 +658,32 @@ impl VisitMut for Subst {
 /// impl Neg for T { /* .... */ }
 /// `
 fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
-
-    /// The parentheses are removed during parsing and must be put back. But a function using
-    /// `parse_macro_input!` must return a `proc_macro::TokenStream`, and it is more difficult to
-    /// add parentheses with that type than with `proc_macro2::TokenStream`. That's why we do the
-    /// parsing in this inner function, and put the parentheses back in the outer function.
-    fn process_attr_args(subst: &mut Subst, args: TokenStream) -> TokenStream {
-        let tokens = args.clone();
-        let mut types = parse_macro_input!(tokens as AttrParams);
-        let mut output = TokenStream::new();
-        if !types.legacy {
-            let gen = types.current_type;
-            output.extend(TokenStream::from(quote!(#gen -> )));
-        }
-        let mut first = true;
-        for ty in &mut types.types {
-            if !first {
-                output.extend(TokenStream::from(quote!(, )));
+    match parse2::<AttrParams>(args) {
+        Ok(mut types) => {
+            let mut output = proc_macro2::TokenStream::new();
+            if !types.legacy {
+                let gen = types.current_type;
+                output.extend(quote!(#gen -> ));
             }
-            // checks if substitutions must be made in that parameter:
-            subst.visit_type_mut(ty);
-            
-            output.extend(TokenStream::from(quote!(#ty)));
-            first = false;
+            let mut first = true;
+            for ty in &mut types.types {
+                if !first {
+                    output.extend(quote!(, ));
+                }
+                // checks if substitutions must be made in that parameter:
+                subst.visit_type_mut(ty);
+
+                output.extend(quote!(#ty));
+                first = false;
+            }
+
+            // puts the parentheses back and returns the modified token stream
+            proc_macro2::Group::new(proc_macro2::Delimiter::Parenthesis, output).into_token_stream()
         }
-        output
+        Err(err) => {
+            err.to_compile_error()
+        }
     }
-
-    // performs the substitution:
-    let new_args = process_attr_args(subst, args.into());
-
-    // puts the parentheses back and returns the token stream:
-    proc_macro2::Group::new(proc_macro2::Delimiter::Parenthesis, new_args.into()).into_token_stream()
 }
 
 /// Parses the attribute parameters.
