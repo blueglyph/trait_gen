@@ -704,6 +704,9 @@ fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, 
         input.parse::<Token![->]>()?;
         let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
         types = vars.into_iter().collect();
+        if types.is_empty() {
+            return Err(Error::new(input.span(), "expected type"));
+        }
         legacy = false;
     } else {
         input.parse::<Token![,]>()?;
