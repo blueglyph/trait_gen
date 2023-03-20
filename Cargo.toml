@@ -3,6 +3,7 @@ name = "trait-gen"
 description = "Trait implementation generator macro"
 version = "0.1.7"
 edition = "2021"
+rust-version = "1.60.0"
 authors = ["Redglyph"]
 categories = ["rust-patterns"]
 keywords = ["proc-macro", "macro", "trait", "generator"]
@@ -16,9 +17,9 @@ readme = "README.md"
 proc-macro = true
 
 [dependencies]
-quote = "1"
-proc-macro2 = { version = "1", features = ["span-locations"] }
-syn = { version = "1", features = ["full", "visit-mut", "extra-traits"] }
-proc-macro-error = "1"
+quote = "1.0.23"
+proc-macro2 = { version = "1.0.51", features = ["span-locations"] }
+syn = { version = "1.0.109", features = ["full", "visit-mut", "extra-traits"] }
+proc-macro-error = "1.0.4"
 
 [dev-dependencies]

@@ -637,8 +637,11 @@ impl VisitMut for Subst {
                     if let Some(length) = path_prefix_len(&self.current_type, path) {
                         if length < path_length || self.can_subst_path() {
                             if VERBOSE { println!("type path: {} length = {}", path_name, length); }
-                            let SubstType::Type(ty) = self.new_types.first().unwrap() else { panic!("found path item instead of type in SubstType") };
-                            *node = ty.clone();
+                            *node = if let SubstType::Type(ty) = self.new_types.first().unwrap() {
+                                ty.clone()
+                            } else {
+                                panic!("found path item instead of type in SubstType")
+                            };
                         }
                     } else {
                         syn::visit_mut::visit_type_mut(self, node);
@@ -737,8 +740,11 @@ impl Parse for Subst {
         let new_types = types.into_iter()
             .map(|ty|
                 if is_path {
-                    let Type::Path(p) = ty else { panic!("this should match Type::Path: {:?}", ty) };
-                    SubstType::Path(p.path)
+                    if let Type::Path(p) = ty {
+                        SubstType::Path(p.path)
+                    } else {
+                        panic!("this should match Type::Path: {:?}", ty)
+                    }
                 } else {
                     SubstType::Type(ty)
                 })
