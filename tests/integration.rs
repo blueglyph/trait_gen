@@ -11,7 +11,7 @@
 //     #[trait_gen(Meter -> Meter, Foot, Mile)]
 // -----------------------------------------------------------------------------
 
-mod type_cases_01 {
+mod type_case_01 {
     use trait_gen::trait_gen;
 
     trait MyLog {
@@ -20,7 +20,7 @@ mod type_cases_01 {
 
     impl MyLog for i32 {
         fn my_log2(self) -> u32 {
-            i32::BITS - 1 -self.leading_zeros()
+            i32::BITS - 1 - self.leading_zeros()
         }
     }
 
@@ -50,7 +50,7 @@ mod type_cases_01 {
     }
 }
 
-mod type_cases_02 {
+mod type_case_02 {
     use trait_gen::trait_gen;
 
     trait MyLog {
@@ -60,7 +60,7 @@ mod type_cases_02 {
     #[trait_gen(T -> u8, u16, u32, u64, u128)]
     impl MyLog for T {
         fn my_log2(self) -> u32 {
-            T::BITS - 1 -self.leading_zeros()
+            T::BITS - 1 - self.leading_zeros()
         }
     }
 
@@ -68,6 +68,7 @@ mod type_cases_02 {
     #[trait_gen(U -> u8, u16, u32, u64, u128)]
     #[trait_gen(T -> &U, &mut U, Box<U>)]
     impl MyLog for T {
+        /// Logarithm base 2 for `${T}`
         fn my_log2(self) -> u32 {
             MyLog::my_log2(*self)
         }
@@ -88,11 +89,16 @@ mod type_cases_02 {
         assert_eq!(show_log2(a), 2);
         assert_eq!(show_log2(p_a), 2);
         assert_eq!(show_log2(p_b), 9);
-        assert_eq!(show_log2(box_a), 2);
+        assert_eq!(show_log2(box_a.clone()), 2);
+
+        assert_eq!(a.my_log2(), 2);
+        assert_eq!((&a).my_log2(), 2);
+        assert_eq!((&mut b).my_log2(), 9);
+        assert_eq!(box_a.my_log2(), 2);
     }
 }
 
-mod type_cases_03 {
+mod type_case_03 {
     use trait_gen::trait_gen;
 
     trait Name {
@@ -127,7 +133,7 @@ mod type_cases_03 {
     }
 }
 
-mod type_cases_04 {
+mod type_case_04 {
     use std::ops::Deref;
     use trait_gen::trait_gen;
 
@@ -173,7 +179,6 @@ mod type_cases_04 {
         assert_eq!(y, Meter(-5));  // doesn't need forward definition
         assert_eq!(y_ref, Meter(-5));
     }
-
 }
 
 // Fake types for the tests
@@ -182,7 +187,7 @@ struct U(u32);
 struct Meter<T>(T);
 struct Foot<T>(T);
 
-mod path_cases_01 {
+mod path_case_01 {
     use trait_gen::trait_gen;
     use std::ops::{Add, Neg};
 
@@ -226,7 +231,7 @@ mod path_cases_01 {
     }
 }
 
-mod path_cases_02 {
+mod path_case_02 {
 
     struct Meter<T>(T);
     struct Foot<T>(T);
@@ -261,7 +266,7 @@ mod path_cases_02 {
     }
 }
 
-mod path_cases_03 {
+mod path_case_03 {
     use trait_gen::trait_gen;
     use std::fmt::Display;
 
@@ -301,7 +306,7 @@ mod path_cases_03 {
     }
 }
 
-mod path_cases_04 {
+mod path_case_04 {
     use trait_gen::trait_gen;
 
     struct Name<'a>(&'a str);
@@ -325,7 +330,7 @@ mod path_cases_04 {
     }
 }
 
-mod path_cases_05 {
+mod path_case_05 {
     struct Name<'a>(&'a str);
     struct Value<'a>(&'a f64);
     mod inner {
@@ -352,7 +357,7 @@ mod path_cases_05 {
     }
 }
 
-mod path_cases_06 {
+mod path_case_06 {
     use trait_gen::trait_gen;
 
     struct Name<'a>(&'a str);
