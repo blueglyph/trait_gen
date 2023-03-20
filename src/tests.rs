@@ -1,3 +1,7 @@
+// Copyright 2023 Redglyph
+//
+// Unit tests.
+
 #![cfg(test)]
 
 use std::str::FromStr;

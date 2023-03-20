@@ -3,7 +3,7 @@
 // Integration tests.
 
 // =============================================================================
-// First format:
+// Main format:
 //
 //     // (T needn't be an alias or an existing type)
 //     #[trait_gen(T -> Meter, Foot, Mile)]
@@ -522,12 +522,8 @@ mod cross_product {
     //     }
     // }
 
-    // Warning! The substitution is not done in attribute paramters. If parameters of attribute A
-    //          include the generic parameter of another attribute B, A should be put first. It will
-    //          copy its parameters literally, and they will be replaced when B is processed:
-    //
-    #[trait_gen(T -> Meter<U>, Foot<U>)]    // <-- attribute A, parameters include generic 'U' of B
-    #[trait_gen(U -> f32, f64)]             // <-- attribute B
+    #[trait_gen(T -> Meter<U>, Foot<U>)]
+    #[trait_gen(U -> f32, f64)]
     impl GetLength<U> for T {
         fn length(&self) -> U {
             self.0 as U
@@ -677,7 +673,7 @@ mod ex03a {
 }
 
 // =============================================================================
-// Second "legacy" format:
+// "Legacy" format:
 //
 //     type T = Meter;
 //     #[trait_gen(T, Foot, Mile)]
