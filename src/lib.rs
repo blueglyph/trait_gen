@@ -572,6 +572,10 @@ impl Parse for Subst {
     }
 }
 
+/// Adds the turbofish double-colon whenever possible to avoid post-substitution problems.
+///
+/// The replaced part may be an expression requiring it, or a type that doesn't require the
+/// double-colon but accepts it. Handling both cases would be complicated so we always include it.
 trait Turbofish {
     fn set_tubofish(&mut self);
 }
@@ -610,8 +614,11 @@ impl Turbofish for Type {
             }
         }
         match self {
-            Type::Array(_) => {}
-            Type::BareFn(_) => {}
+            Type::Array(a) => a.elem.set_tubofish(),
+            Type::BareFn(f) => {
+                for i in &mut f.inputs { i.ty.set_tubofish(); }
+                if let syn::ReturnType::Type(_, ty) = &mut f.output { ty.set_tubofish(); }
+            }
             Type::Group(_) => {}
             Type::ImplTrait(_) => {}
             Type::Infer(_) => {}
@@ -619,11 +626,11 @@ impl Turbofish for Type {
             Type::Never(_) => {}
             Type::Paren(_) => {}
             Type::Path(p) => p.path.set_tubofish(),
-            Type::Ptr(_) => {}
+            Type::Ptr(p) => p.elem.set_tubofish(),
             Type::Reference(r) => r.elem.set_tubofish(),
-            Type::Slice(_) => {}
+            Type::Slice(s) => s.elem.set_tubofish(),
             Type::TraitObject(_) => {}
-            Type::Tuple(_) => {}
+            Type::Tuple(t) => for ty in &mut t.elems { ty.set_tubofish(); }
             Type::Verbatim(_) => {}
             _ => {}
         }
