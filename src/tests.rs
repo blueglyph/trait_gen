@@ -123,8 +123,8 @@ fn parse_args() {
                 match () {
                     _ if parse_error =>
                         println!("{report}expecting parse error"),
-                    _ if pathname(&subst.current_type) != generic =>
-                        println!("{report}expecting generic '{}' instead of '{}'", generic, pathname(&subst.current_type)),
+                    _ if pathname(&subst.generic_arg) != generic =>
+                        println!("{report}expecting generic '{}' instead of '{}'", generic, pathname(&subst.generic_arg)),
                     _ if subst.legacy != legacy =>
                         println!("{report}expecting {}legacy", if legacy { "" } else { "non-" }),
                     _ if !subst.new_types.iter().all(|t| t.is_path() == path) =>
@@ -150,8 +150,8 @@ fn parse_args() {
                     match () {
                         _ if parse_error =>
                             println!("{report}expecting parse error"),
-                        _ if pathname(&params.current_type) != generic =>
-                            println!("{report}expecting generic '{}' instead of '{}'", generic, pathname(&params.current_type)),
+                        _ if pathname(&params.generic_arg) != generic =>
+                            println!("{report}expecting generic '{}' instead of '{}'", generic, pathname(&params.generic_arg)),
                         _ if params.legacy != legacy =>
                             println!("{report}expecting {}legacy", if legacy { "" } else { "non-" }),
                         _ => new_error = false

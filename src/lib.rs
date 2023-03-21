@@ -155,7 +155,11 @@ use syn::visit_mut::VisitMut;
 
 const VERBOSE: bool = false;
 
+//==============================================================================
+// Main substitution types and their trait implementations
+
 #[derive(Debug)]
+/// Substitution item, either a Path (`super::Type`) or a Type (`&mut Type`)
 enum SubstType {
     Path(Path),
     Type(Type)
@@ -171,18 +175,29 @@ impl ToTokens for SubstType {
 }
 
 #[derive(Debug)]
+/// Attribute substitution data used to replace the generic argument in `generic_arg` with the
+/// types in `new_types`.
 struct Subst {
-    current_type: Path,
+    /// generic argument to replace
+    generic_arg: Path,
+    /// types that replace the generic argument
     new_types: Vec<SubstType>,
+    /// legacy format if true
     legacy: bool,
+    /// Path substitution items if true, Type items if false
     is_path: bool,
-    can_subst_path: Vec<bool>, // cannot substitue paths when last is false (can substitute if empty)
+    /// Context stack, cannot substitue paths when last is false (can substitute if empty)
+    can_subst_path: Vec<bool>,
 }
 
 #[derive(Debug)]
+/// Attribute data used to substitute arguments in inner `trait_gen` attributes
 struct AttrParams {
-    current_type: Path,
-    types: Vec<Type>,
+    /// generic argument to replace
+    generic_arg: Path,
+    /// types that replace the generic argument
+    new_types: Vec<Type>,
+    /// legacy format if true
     legacy: bool,
 }
 
@@ -195,13 +210,16 @@ impl Subst {
 impl Display for Subst {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "PathTypes {{\n  current_types: {}\n  new_types: {}\n  current_defined: {}\n  enabled:  {}\n}}",
-               pathname(&self.current_type),
+               pathname(&self.generic_arg),
                self.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
                self.legacy.to_string(),
                self.can_subst_path.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
         )
     }
 }
+
+//==============================================================================
+// Helper functions and traits
 
 fn pathname<T: ToTokens>(path: &T) -> String {
     path.to_token_stream().to_string()
@@ -218,6 +236,7 @@ fn pathname<T: ToTokens>(path: &T) -> String {
 }
 
 trait NodeMatch {
+    /// Checks if the `self` node is a prefix of `other`.
     fn match_prefix(&self, other: &Self) -> bool;
 }
 
@@ -261,6 +280,8 @@ impl NodeMatch for PathSegment {
     }
 }
 
+/// Compares two type paths and, if `prefix` is a prefix of `full_path`, returns the number of
+/// matching segments.
 fn path_prefix_len(prefix: &Path, full_path: &Path) -> Option<usize> {
     // if VERBOSE { println!("- path_prefix_len(prefix: {}, full: {})", pathname(prefix), pathname(full_path)); }
     let prefix_len = prefix.segments.len();
@@ -288,6 +309,9 @@ fn replace_str(string: &str, pat: &str, repl: &str) -> Option<String> {
     }
 }
 
+//==============================================================================
+// Main substitution code
+
 impl VisitMut for Subst {
     fn visit_attribute_mut(&mut self, node: &mut Attribute) {
         if let Some(PathSegment { ident, .. }) = node.path.segments.first() {
@@ -295,7 +319,7 @@ impl VisitMut for Subst {
                 "doc" => {
                     if let Some(ts_str) = replace_str(
                         &node.tokens.to_string(),
-                        &format!("${{{}}}", pathname(&self.current_type)),
+                        &format!("${{{}}}", pathname(&self.generic_arg)),
                         &pathname(self.new_types.first().unwrap()))
                     {
                         let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing attribute failed: {}", ts_str));
@@ -304,7 +328,7 @@ impl VisitMut for Subst {
                     return
                 }
                 "trait_gen" => {
-                    if VERBOSE { println!("#trait_gen: '{}' in {}", pathname(&self.current_type), pathname(&node.tokens)); }
+                    if VERBOSE { println!("#trait_gen: '{}' in {}", pathname(&self.generic_arg), pathname(&node.tokens)); }
                     let new_args = process_attr_args(self, node.tokens.clone());
                     if VERBOSE { println!("=> #trait_gen: {}", pathname(&new_args)); }
                     node.tokens = new_args;
@@ -342,7 +366,7 @@ impl VisitMut for Subst {
             // substitutes "${T}" in expression literals (not used in macros, see visit_macro_mut)
             if let Some(ts_str) = replace_str(
                 &lit.to_token_stream().to_string(),
-                &format!("${{{}}}", pathname(&self.current_type)),
+                &format!("${{{}}}", pathname(&self.generic_arg)),
                 &pathname(self.new_types.first().unwrap()))
             {
                 let new_lit: LitStr = parse_str(&ts_str).expect(&format!("parsing LitStr failed: {}", ts_str));
@@ -354,7 +378,7 @@ impl VisitMut for Subst {
     }
 
     fn visit_generics_mut(&mut self, i: &mut Generics) {
-        if let Some(segment) = self.current_type.segments.first() {
+        if let Some(segment) = self.generic_arg.segments.first() {
             let current_ident = &segment.ident;
             for t in i.params.iter() {
                 match &t {
@@ -384,7 +408,7 @@ impl VisitMut for Subst {
         // substitutes "${T}" in macros
         if let Some(ts_str) = replace_str(
             &node.tokens.to_string(),
-            &format!("${{{}}}", pathname(&self.current_type)),
+            &format!("${{{}}}", pathname(&self.generic_arg)),
             &pathname(self.new_types.first().unwrap()))
         {
             let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing Macro failed: {}", ts_str));
@@ -397,7 +421,7 @@ impl VisitMut for Subst {
     fn visit_path_mut(&mut self, path: &mut Path) {
         let path_name = pathname(path);
         let path_length = path.segments.len();
-        if let Some(length) = path_prefix_len(&self.current_type, path) {
+        if let Some(length) = path_prefix_len(&self.generic_arg, path) {
             // If U is both a constant and the generic argument, in an expression so when
             // self.substitution_enabled() == false, we must distinguish two cases:
             // - U::MAX must be replaced (length < path_length)
@@ -445,7 +469,7 @@ impl VisitMut for Subst {
                 Type::Path(TypePath { path, .. }) => {
                     let path_name = pathname(path);
                     let path_length = path.segments.len();
-                    if let Some(length) = path_prefix_len(&self.current_type, path) {
+                    if let Some(length) = path_prefix_len(&self.generic_arg, path) {
                         if length < path_length || self.can_subst_path() {
                             if VERBOSE { println!("type path: {} length = {}", path_name, length); }
                             *node = if let SubstType::Type(ty) = self.new_types.first().unwrap() {
@@ -474,6 +498,9 @@ impl VisitMut for Subst {
     }
 }
 
+//==============================================================================
+// Attribute argument processing
+
 /// Perform substitutions in the arguments of the inner attribute if necessary.
 ///
 /// `
@@ -486,11 +513,11 @@ fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_
         Ok(mut types) => {
             let mut output = proc_macro2::TokenStream::new();
             if !types.legacy {
-                let gen = types.current_type;
+                let gen = types.generic_arg;
                 output.extend(quote!(#gen -> ));
             }
             let mut first = true;
-            for ty in &mut types.types {
+            for ty in &mut types.new_types {
                 if !first {
                     output.extend(quote!(, ));
                 }
@@ -547,7 +574,7 @@ impl Parse for AttrParams {
         let content;
         parenthesized!(content in input);
         let (current_type, types, legacy) = parse_parameters(&content.into())?;
-        Ok(AttrParams { current_type, types, legacy })
+        Ok(AttrParams { generic_arg: current_type, new_types: types, legacy })
     }
 }
 
@@ -568,7 +595,7 @@ impl Parse for Subst {
                     SubstType::Type(ty)
                 })
             .collect::<Vec<_>>();
-        Ok(Subst { current_type, new_types: new_types, legacy, is_path, can_subst_path: Vec::new() })
+        Ok(Subst { generic_arg: current_type, new_types: new_types, legacy, is_path, can_subst_path: Vec::new() })
     }
 }
 
@@ -646,6 +673,8 @@ impl Turbofish for SubstType {
     }
 }
 
+//==============================================================================
+
 /// Generates the attached trait implementation for all the types given in argument.
 ///
 /// The attribute is placed before the pseudo-generic implementation code. The _generic argument_
@@ -715,7 +744,7 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     if VERBOSE {
         println!("{}\ntrait_gen for {} -> {}: {}",
                  "=".repeat(80),
-                 pathname(&types.current_type),
+                 pathname(&types.generic_arg),
                  if types.is_path { "PATH" } else { "TYPE" },
                  &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")
         )
@@ -734,7 +763,7 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     if types.legacy {
         output.extend(TokenStream::from(quote!(#ast)));
     }
-    if VERBOSE { println!("end trait_gen for {}\n{}", pathname(&types.current_type), "-".repeat(80)); }
+    if VERBOSE { println!("end trait_gen for {}\n{}", pathname(&types.generic_arg), "-".repeat(80)); }
     if VERBOSE { println!("{}\n{}", output, "=".repeat(80)); }
     output
 }
