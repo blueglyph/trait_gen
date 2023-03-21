@@ -4,69 +4,45 @@
 
 //! # The trait_gen library
 //!
-//! This library provides attributes to generate the trait implementations for several
-//! types, without the need for custom declarative macros.
+//! This library provides an attribute macro to generate the trait implementations for a number of
+//! types, without the need for custom declarative macros, code repetition or blanket implementations.
+//! It makes the code easier to read and to maintain.
 //!
-//! In the example below, the `Add` trait is implemented for `Meter`, `Foot` and `Mile`.
-//! The `T` type identifier is used to mark where the substitution takes place; it can be an
-//! existing type or an alias but it's not necessary.
+//! Here is a short example:
 //!
 //! ```rust
-//! # use std::ops::Add;
-//! use trait_gen::trait_gen;
-//!
-//! pub struct Meter(f64);
-//! pub struct Foot(f64);
-//! pub struct Mile(f64);
-//!
-//! #[trait_gen(T -> Meter, Foot, Mile)]
-//! impl Add for T {
-//!     type Output = T;
-//!
-//!     fn add(self, rhs: T) -> Self::Output {
-//!         Self(self.0 + rhs.0)
+//! # use trait_gen::trait_gen;
+//! # trait MyLog { fn my_log2(self) -> u32; }
+//! #[trait_gen(T -> u8, u16, u32, u64, u128)]
+//! impl MyLog for T {
+//!     fn my_log2(self) -> u32 {
+//!         T::BITS - 1 - self.leading_zeros()
 //!     }
 //! }
 //! ```
 //!
-//! The `trait_gen` attribute has the same effect as this custom declarative macro:
+//! The `trait_gen` attribute generates the following code by replacing `T` with the types given as
+//! arguments:
 //!
 //! ```rust
-//! # use std::ops::Add;
-//! # pub struct Meter(f64);
-//! # pub struct Foot(f64);
-//! # pub struct Mile(f64);
-//! macro_rules! impl_add_length {
-//!     ($($t:ty)*) => (
-//!         $(impl Add for $t {
-//!             type Output = $t;
-//!
-//!             fn add(self, rhs: $t) -> Self::Output {
-//!                 Self(self.0 + rhs.0)
-//!             }
-//!         })*
-//!     )
+//! # trait MyLog { fn my_log2(self) -> u32; }
+//! impl MyLog for u8 {
+//!     fn my_log2(self) -> u32 {
+//!         u8::BITS - 1 - self.leading_zeros()
+//!     }
 //! }
-//!
-//! impl_add_length! { Meter Foot Mile }
+//! impl MyLog for u16 {
+//!     fn my_log2(self) -> u32 {
+//!         u16::BITS - 1 - self.leading_zeros()
+//!     }
+//! }
+//! // and so on for the remaining types
 //! ```
 //!
-//! The advantages of the first method are the clarity of the native code, the support of
-//! refactoring tools, editor syntactic and semantic awareness, and not having to convert the code into
-//! a declarative macro. Looking for the definition of an implementation method is also much easier
-//! with the full support of code-aware editors!
+//! ## Usage
 //!
-//! The disadvantage is the current lack of support for procedural macros with the _IntelliJ_ plugin,
-//! although this is an ongoing work (see
-//! [tracking issue](https://github.com/intellij-rust/intellij-rust/issues/6908)). A few
-//! work-arounds are discussed [later](#code-awareness-issues).
-//!
-//! There are also a few limitations of the current version described in the [Limitations](#limitations)
-//! section.
-//!
-//! <br/>
-//!
-//! ## The trait_gen attribute
+//! The attribute is placed before the pseudo-generic implementation code. The _generic argument_
+//! is given first, followed by a right arrow (`->`) and a list of type arguments.
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
@@ -77,44 +53,36 @@
 //!     // ...
 //! }
 //! ```
-//! This attribute successively substitutes the `T` type parameter, which is used as a
-//! type in the attached source code, with each of the following types (`Type1`, `Type2`, `Type3`)
-//! to generate all the implementations.
 //!
-//! All paths beginning with `T` in the code have this segment replaced. For example,
-//! `T::default()` generates `Type1::default()`, `Type2::default()` and so on, but
-//! `super::T` is unchanged.
+//! The attribute macro successively substitutes the generic argument `T` in the code with each of
+//! the following types (`Type1`, `Type2`, `Type3`) to generate all the implementations.
 //!
-//! The code must of course be compatible with all the types, or the compiler will trigger the
-//! relevant errors. For example `#[trait_gen(T -> u64, f64)]` cannot be used with `Self(0)` because
-//! `0` is not a valid floating-point literal.
+//! All the [type paths](https://doc.rust-lang.org/reference/paths.html#paths-in-types) beginning with `T`
+//! in the code have this part replaced. For example, `T::default()` generates `Type1::default()`,
+//! `Type2::default()` and so on, but `super::T` is unchanged because it belongs to another scope.
 //!
-//! Any occurrence of the parameter with the `${T}` format in doc comments, macros and string
-//! literals are replaced by the actual type in each implementation:
+//! The code must of course be compatible with all the types, or the compiler will trigger the relevant
+//! errors. For example `#[trait_gen(T -> u64, f64)]` cannot be applied to `let x: T = 0;` because `0`
+//! is not a valid floating-point literal.
 //!
-//! ```rust
-//! # use trait_gen::trait_gen;
-//! trait Trait {
-//!     fn text(&self) -> String;
-//! }
-//! #[trait_gen(T -> u32, u64)]
-//! impl Trait for T {
-//!     /// Produces a string representation for ${T}
-//!     fn text(&self) -> String {
-//!         let ty = "${T}".to_string();
-//!         format!("{}: {}", ty, self)
-//!     }
-//! }
+//! Finally, any occurrence of `${T}` in doc comments, macros and string literals are replaced by the actual
+//! type in each implementation.
 //!
-//! assert_eq!(1_u32.text(), "u32: 1");
-//! assert_eq!(2_u64.text(), "u64: 2");
-//! ```
+//! _Notes:_
+//! - _Using the letter "T" is not mandatory, any type path will do. For example, `gen::Type` is fine
+//! too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers
+//! are preferred._
+//! - _Two or more attributes can be written in front of the implementation code, to generate the cross-product
+//! of their arguments._
+//! - _`trait_gen` can be used on type implementations too._
 //!
-//! <br/>
+//! For more examples, look at the [README.md](https://github.com/blueglyph/trait_gen/blob/v0.2.0/README.md)
+//! or the crate [integration tests](https://github.com/blueglyph/trait_gen/blob/v0.2.0/tests/integration.rs).
 //!
-//! ## Alternative format
+//! ## Legacy Format
 //!
-//! The attribute supports a shorter "legacy" format which was used in the earlier versions:
+//! The attribute used a shorter format in earlier versions, which is still supported even though it
+//! may be more confusing to read:
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
@@ -126,188 +94,32 @@
 //! }
 //! ```
 //!
-//! Here, `Type2` and `Type3` are literally substituted for `Type1` to generate their implementation,
-//! then the original code is implemented for `Type1`. This is a shortcut for the equivalent
-//! attribute with the other format:
+//! is a shortcut for the equivalent attribute with the other format:
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
 //! # struct Type1; struct Type2; struct Type3;
 //! # trait Trait {}
-//! #[trait_gen(Type1 -> Type2, Type3, Type1)]
+//! #[trait_gen(Type1 -> Type1, Type2, Type3)]
 //! impl Trait for Type1 {
 //!     // ...
 //! }
 //! ```
 //!
-//! _Remark: this strange ordering comes from an optimization in the legacy format. This makes no
-//! difference, except the order of the compiler messages if there are warnings or errors in the
-//! code - that's the only reason we mention it here._
-//!
-//! The short format can be used when there is no risk of confusion, like in the example below.
-//! All the `Meter` instances must change, it is unlikely to be mixed with `Foot` and `Mile`, so
-//! using an alias is unnecessary. The type to replace in the code must be in first position in
-//! the parameter list:
-//!
-//! ```rust
-//! use std::ops::Add;
-//! use trait_gen::trait_gen;
-//!
-//! pub struct Meter(f64);
-//! pub struct Foot(f64);
-//! pub struct Mile(f64);
-//!
-//! #[trait_gen(Meter, Foot, Mile)]
-//! impl Add for Meter {
-//!     type Output = Meter;
-//!
-//!     fn add(self, rhs: Meter) -> Self::Output {
-//!         Self(self.0 + rhs.0)
-//!     }
-//! }
-//! ```
-//!
-//! In some situations, one of the implemented types happens to be required in all the
-//! implementations. Consider the following example, in which the return type is always `u64`:
-//!
-//! ```rust,compile_fail
-//! # use trait_gen::trait_gen;
-//! pub trait ToU64 {
-//!     fn into_u64(self) -> u64;
-//! }
-//!
-//! #[trait_gen(u64, i64, u32, i32, u16, i16, u8, i8)]
-//! impl ToU64 for u64 {
-//!     fn into_u64(self) -> u64 {  // ERROR! Replaced by -> i64, u32, ...
-//!         self as u64
-//!     }
-//! }
-//! ```
-//!
-//! This doesn't work because the return type of `into_u64()` will be replaced too! To prevent it,
-//! an alias must be used (or the other attribute format). This works:
-//!
-//! ```rust
-//! # use trait_gen::trait_gen;
-//! # pub trait ToU64 {
-//! #     fn into_u64(self) -> u64;
-//! # }
-//! #
-//! type T = u64;
-//!
-//! #[trait_gen(T, i64, u32, i32, u16, i16, u8, i8)]
-//! impl ToU64 for T {
-//!     fn into_u64(self) -> u64 {
-//!         self as u64
-//!     }
-//! }
-//! ```
-//!
-//! <br/>
-//!
-//! ## Code awareness issues
-//!
-//! _rust-analyzer_ supports procedural macros for code awareness, so everything should be fine for
-//! editors based on this Language Server Protocol implementation. Unfortunately this isn't the
-//! case of all IDEs yet, which removes some benefits of using this macro. For instance, the
-//! _IntelliJ_ plugin is not able to provide much support while typing the code for an unknown
-//! `T` type, nor can it find the definition of the implemented methods, or even
-//! suggest them.
-//!
-//! Here are two work-arounds that help when typing the trait implementation. However, they can't
-//! do much about code awareness when the trait methods are used later. Hopefully the remaining
-//! IDEs will provide more support for procedural macros soon.
-//!
-//! * Defining a type alias for the identifier used in the attribute doesn't change the produced
-//! code, but it allows the editor to understand it without expanding the macro:
-//!
-//!   ```rust
-//!     # use trait_gen::trait_gen;
-//!     pub trait ToU64 {
-//!         fn into_u64(self) -> u64;
-//!     }
-//!
-//!     type T = u64;
-//!
-//!     #[trait_gen(T -> u64, i64, u32, i32, u16, i16, u8, i8)]
-//!     impl ToU64 for T {
-//!         fn into_u64(self) -> u64 {
-//!             self as u64
-//!         }
-//!     }
-//!   ```
-//!
-//! * Implementing for an existing type then using it as the type parameter is another possibility,
-//! but it may look more confusing so use it with caution:
-//!
-//!   ```rust
-//!     # use trait_gen::trait_gen;
-//!     pub trait AddMod {
-//!         fn add_mod(self, other: Self, m: Self) -> Self;
-//!     }
-//!
-//!     // No need to use `type T = u32` in such a simple case:
-//!     #[trait_gen(u32 -> u32, i32, u64, i64, f32, f64)]
-//!     impl AddMod for u32 {
-//!         fn add_mod(self, other: Self, m: Self) -> Self {
-//!             (self + other) % m
-//!         }
-//!     }
-//!   ```
-//!
-//! <br/>
-//!
 //! ## Limitations
 //!
-//! * Rust doesn't allow alias constructors with the "legacy" format. `Self` or a trait associated
-//! type is usually equivalent - here, `Self(1.0)`. If there is no alternative, consider using
-//! the `Default` trait or creating a specific one.
+//! * The procedural macro of the `trait_gen` attribute can't handle scopes, so it doesn't support any
+//! type declaration with the same literal as the generic argument. This, for instance, fails to compile
+//! because of the generic function:
 //!
-//!   ```rust,compile_fail
+//!   ```rust, compile_fail
+//!   # use num::Num;
 //!   # use trait_gen::trait_gen;
-//!   # trait Neutral { fn mul_neutral(&self) -> Self; }
-//!   # struct Foot(f64);
-//!   # struct Mile(f64);
-//!   # struct Meter(f64);
-//!   type T = Meter;
-//!
-//!   #[trait_gen(T, Foot, Mile)]
-//!   impl Neutral for T {
-//!       fn mul_neutral(&self) -> Self {
-//!           T(1.0)  // <== ERROR, use Self(1.0) instead
-//!       }
-//!   }
-//!   ```
-//!
-//!   The `->` attribute format allows the substitution:
-//!
-//!   ```rust
-//!   # use trait_gen::trait_gen;
-//!   # trait Neutral { fn mul_neutral(&self) -> Self; }
-//!   # struct Foot(f64);
-//!   # struct Mile(f64);
-//!   # struct Meter(f64);
-//!   #[trait_gen(T -> Meter, Foot, Mile)]
-//!   impl Neutral for T {
-//!       fn mul_neutral(&self) -> Self {
-//!           T(1.0)  // <== always substituted with either Meter, Foot or Mile
-//!       }
-//!   }
-//!   ```
-//!
-//! * The procedural macro behind the attribute can't handle scopes, so it doesn't support any type
-//! declaration with the same type name as the attribute parameter, including generics. This, for
-//! instance, fails to compile:
-//!
-//!   ```rust,compile_fail
-//!   use num::Num;
-//!   use trait_gen::trait_gen;
-//!
-//!   trait AddMod {
-//!       type Output;
-//!       fn add_mod(self, rhs: Self, modulo: Self) -> Self::Output;
-//!   }
-//!
+//!   #
+//!   # trait AddMod {
+//!   #     type Output;
+//!   #     fn add_mod(self, rhs: Self, modulo: Self) -> Self::Output;
+//!   # }
 //!   #[trait_gen(T -> u64, i64, u32, i32)]
 //!   impl AddMod for T {
 //!       type Output = T;
@@ -320,6 +132,10 @@
 //!       }
 //!   }
 //!   ```
+//!
+//! * The generic argument must be a [type path](https://doc.rust-lang.org/reference/paths.html#paths-in-types),
+//! it cannot be a more complex type like a reference or a slice. So you can use `gen::T<U> -> ...`
+//! but not `&T -> ...`.
 
 mod tests;
 
@@ -327,7 +143,10 @@ use proc_macro::TokenStream;
 use std::fmt::{Display, Formatter};
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parenthesized, parse2, Error};
+use syn::{
+    Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr,
+    ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parenthesized, parse2, Error,
+};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -403,7 +222,7 @@ trait NodeMatch {
 }
 
 impl NodeMatch for GenericArgument {
-    /// Compares both generic arguments, disregarding lifetime parameter names
+    /// Compares both generic arguments, disregarding lifetime argument names
     fn match_prefix(&self, other: &Self) -> bool {
         if let GenericArgument::Lifetime(_) = self {
             // ignoring the actual lifetime ident
@@ -538,7 +357,7 @@ impl VisitMut for Subst {
         let path_name = pathname(path);
         let path_length = path.segments.len();
         if let Some(length) = path_prefix_len(&self.current_type, path) {
-            // If U is both a constant and the attribute parameter type, in an expression so when
+            // If U is both a constant and the generic argument, in an expression so when
             // self.substitution_enabled() == false, we must distinguish two cases:
             // - U::MAX must be replaced (length < path_length)
             // - U or U.add(1) must stay
@@ -655,7 +474,7 @@ impl VisitMut for Subst {
     }
 }
 
-/// Perform substitutions in the parameters of the inner attribute if necessary.
+/// Perform substitutions in the arguments of the inner attribute if necessary.
 ///
 /// `
 /// #[trait_gen(U -> i32, u32)]     // <== we are processing this attribute
@@ -675,7 +494,7 @@ fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_
                 if !first {
                     output.extend(quote!(, ));
                 }
-                // checks if substitutions must be made in that parameter:
+                // checks if substitutions must be made in that argument:
                 subst.visit_type_mut(ty);
 
                 output.extend(quote!(#ty));
@@ -691,14 +510,14 @@ fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_
     }
 }
 
-/// Parses the attribute parameters.
+/// Parses the attribute arguments.
 ///
 /// There are two syntaxes:
 /// - `T -> Type1, Type2, Type3`
 /// - `Type1, Type2, Type3` (legacy format)
 ///
 /// Returns (path, types, legacy), where
-/// - `path` is the generic parameter `T` (or `Type1` in legacy format)
+/// - `path` is the generic argument `T` (or `Type1` in legacy format)
 /// - `types` is a vector of parsed `Type` items: `Type1, Type2, Type3` (or `Type2, Type3` in legacy)
 /// - `legacy` is true if the legacy format is used
 fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, bool)> {
@@ -820,110 +639,63 @@ impl Turbofish for SubstType {
     }
 }
 
-/// Generates the attached trait implementation for all the types given in parameter.
+/// Generates the attached trait implementation for all the types given in argument.
 ///
-/// In the example below, the `Add` trait is implemented for `Meter`, `Foot` and `Mile`. The
-/// `T` type identifier is used to mark where the substitution takes place; it can be an existing type
-/// or an alias but it's not necessary.
+/// The attribute is placed before the pseudo-generic implementation code. The _generic argument_
+/// is given first, followed by a right arrow (`->`) and a list of type arguments.
 ///
 /// ```rust
-/// # use std::ops::Add;
-/// use trait_gen::trait_gen;
-///
-/// pub struct Meter(f64);
-/// pub struct Foot(f64);
-/// pub struct Mile(f64);
-///
-/// #[trait_gen(T -> Meter, Foot, Mile)]
-/// impl Add for T {
-///     type Output = T;
-///
-///     fn add(self, rhs: T) -> Self::Output {
-///         T(self.0 + rhs.0)
-///     }
+/// # use trait_gen::trait_gen;
+/// # struct Type1; struct Type2; struct Type3;
+/// # trait Trait {}
+/// #[trait_gen(T -> Type1, Type2, Type3)]
+/// impl Trait for T {
+///     // ...
 /// }
 /// ```
 ///
-/// <br/>
+/// The attribute macro successively substitutes the generic argument `T` in the code with each of
+/// the following types (`Type1`, `Type2`, `Type3`) to generate all the implementations.
 ///
-/// ## Alternative format
+/// All the [type paths](https://doc.rust-lang.org/reference/paths.html#paths-in-types) beginning with `T`
+/// in the code have this part replaced. For example, `T::default()` generates `Type1::default()`,
+/// `Type2::default()` and so on, but `super::T` is unchanged because it belongs to another scope.
 ///
-/// The short format can be used when there is no risk of confusion, like in the example below.
-/// All the `Meter` instances must change, it is unlikely to be mixed with `Foot` and `Mile`, so
-/// using an alias is unnecessary. The type to replace in the code must be in first position in
-/// the parameter list:
+/// The code must of course be compatible with all the types, or the compiler will trigger the relevant
+/// errors. For example `#[trait_gen(T -> u64, f64)]` cannot be applied to `let x: T = 0;` because `0`
+/// is not a valid floating-point literal.
+///
+/// Finally, any occurrence of `${T}` in doc comments, macros and string literals are replaced by the actual
+/// type in each implementation.
+///
+/// _Notes:_
+/// - _Using the letter "T" is not mandatory, any type path will do. For example, `gen::Type` is fine
+/// too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers
+/// are preferred._
+/// - _Two or more attributes can be written in front of the implementation code, to generate the cross-product
+/// of their arguments._
+/// - _`trait_gen` can be used on type implementations too._
+///
+/// ## Examples
 ///
 /// ```rust
-/// use std::ops::Add;
-/// use trait_gen::trait_gen;
+/// # use trait_gen::trait_gen;
+/// # trait MyLog { fn my_log2(self) -> u32; }
+/// #[trait_gen(T -> u8, u16, u32, u64, u128)]
+/// impl MyLog for T {
+///     fn my_log2(self) -> u32 {
+///         T::BITS - 1 - self.leading_zeros()
+///     }
+/// }
 ///
-/// pub struct Meter(f64);
-/// pub struct Foot(f64);
-/// pub struct Mile(f64);
-///
-/// #[trait_gen(Meter, Foot, Mile)]
-/// impl Add for Meter {
-///     type Output = Meter;
-///
-///     fn add(self, rhs: Meter) -> Self::Output {
-///         Self(self.0 + rhs.0)
+/// #[trait_gen(U -> u8, u16, u32, u64, u128)]
+/// #[trait_gen(T -> &U, &mut U, Box<U>)]
+/// impl MyLog for T {
+///     fn my_log2(self) -> u32 {
+///         MyLog::my_log2(*self)
 ///     }
 /// }
 /// ```
-///
-/// This is a shortcut for the other attribute format `#[trait_gen(Meter -> Meter, Foot, Mile)]`.
-/// The type to replace must come first in the attribute parameter list - here, `Meter`.
-///
-/// <br/>
-///
-/// ## Limitations
-///
-/// * Rust doesn't allow alias constructors with the "legacy" format. `Self` or a trait associated
-/// type is usually equivalent - here, `Self(1.0)`. If there is no alternative, consider using
-/// the `Default` trait or creating a specific one.
-///
-///   ```rust,compile_fail
-///   # use trait_gen::trait_gen;
-///   # trait Neutral { fn mul_neutral(&self) -> Self; }
-///   # struct Foot(f64);
-///   # struct Mile(f64);
-///   # struct Meter(f64);
-///   #[trait_gen(T, Foot, Mile)]
-///   impl Neutral for T {
-///       fn mul_neutral(&self) -> Self {
-///           T(1.0)  // <== ERROR, use Self(1.0) instead
-///       }
-///   }
-///   ```
-///
-///   The `->` attribute format allows the substitution:
-///
-///   ```rust,compile_fail
-///   #[trait_gen(T -> Meter, Foot, Mile)]
-///   impl Neutral for T {
-///       fn mul_neutral(&self) -> Self {
-///           T(1.0)  // <== replaced
-///       }
-///   }
-///   ```
-///
-/// * The procedural macro behind the attribute can't handle scopes, so it doesn't support any type
-/// declaration with the same type name as the attribute parameter, including generics. This, for
-/// instance, fails to compile:
-///
-///   ```rust,compile_fail
-///   #[trait_gen(T -> u64, i64, u32, i32)]
-///   impl AddMod for T {
-///       type Output = T;
-///
-///       fn add_mod(self, rhs: Self, modulo: Self) -> Self::Output {
-///           fn int_mod<T: Num> (a: T, m: T) -> T { // <== ERROR, conflicting 'T'
-///               a % m
-///           }
-///           int_mod(self + rhs, modulo)
-///       }
-///   }
-///   ```
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {

@@ -836,3 +836,44 @@ mod ex03b {
         assert_eq!(h.into_u64(), 10_u64);
     }    
 }
+
+// =============================================================================
+// Non-trait implementations.
+// -----------------------------------------------------------------------------
+
+mod impl_type_01 {
+    use trait_gen::trait_gen;
+    use super::{Foot, Meter};
+
+    #[trait_gen(T -> f32, f64)]
+    impl Foot<T> {
+        fn from_meter(x: Meter<T>) -> Self {
+            Foot(x.0 * 3.372)
+        }
+    }
+
+    #[test]
+    fn test() {
+        assert_eq!(Foot::<f32>::from_meter(Meter(1.0_f32)).0, 3.372_f32);
+        assert_eq!(Foot::<f64>::from_meter(Meter(1.0_f64)).0, 3.372_f64);
+    }
+}
+
+mod impl_type_02 {
+    use trait_gen::trait_gen;
+    use super::{Foot, Meter};
+
+    #[trait_gen(T -> f32, f64)]
+    impl Meter<T> {
+        fn from_foot<F>(x: Foot<F>) -> Self where T: From<F> {
+            Meter(T::from(x.0) / 3.372)
+        }
+    }
+
+    #[test]
+    fn test() {
+        assert!((Meter::<f32>::from_foot(Foot(1.0_f32)).0 - 0.29656_f32).abs() < 1e-5);
+        assert!((Meter::<f64>::from_foot(Foot(1.0_f32)).0 - 0.29656_f64).abs() < 1e-5);
+        assert!((Meter::<f64>::from_foot(Foot(1.0_f64)).0 - 0.29656_f64).abs() < 1e-5);
+    }
+}
