@@ -289,6 +289,33 @@ fn replace_str(string: &str, pat: &str, repl: &str) -> Option<String> {
 }
 
 impl VisitMut for Subst {
+    fn visit_attribute_mut(&mut self, node: &mut Attribute) {
+        if let Some(PathSegment { ident, .. }) = node.path.segments.first() {
+            match ident.to_string().as_str() {
+                "doc" => {
+                    if let Some(ts_str) = replace_str(
+                        &node.tokens.to_string(),
+                        &format!("${{{}}}", pathname(&self.current_type)),
+                        &pathname(self.new_types.first().unwrap()))
+                    {
+                        let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing attribute failed: {}", ts_str));
+                        node.tokens = new_ts;
+                    }
+                    return
+                }
+                "trait_gen" => {
+                    if VERBOSE { println!("#trait_gen: '{}' in {}", pathname(&self.current_type), pathname(&node.tokens)); }
+                    let new_args = process_attr_args(self, node.tokens.clone());
+                    if VERBOSE { println!("=> #trait_gen: {}", pathname(&new_args)); }
+                    node.tokens = new_args;
+                    return
+                }
+                _ => ()
+            }
+        }
+        syn::visit_mut::visit_attribute_mut(self, node);
+    }
+
     fn visit_expr_mut(&mut self, node: &mut Expr) {
         let mut enabled = self.can_subst_path();
         match node {
@@ -308,6 +335,22 @@ impl VisitMut for Subst {
         self.can_subst_path.push(enabled);
         syn::visit_mut::visit_expr_mut(self, node);
         self.can_subst_path.pop();
+    }
+
+    fn visit_expr_lit_mut(&mut self, node: &mut ExprLit) {
+        if let Lit::Str(lit) = &node.lit {
+            // substitutes "${T}" in expression literals (not used in macros, see visit_macro_mut)
+            if let Some(ts_str) = replace_str(
+                &lit.to_token_stream().to_string(),
+                &format!("${{{}}}", pathname(&self.current_type)),
+                &pathname(self.new_types.first().unwrap()))
+            {
+                let new_lit: LitStr = parse_str(&ts_str).expect(&format!("parsing LitStr failed: {}", ts_str));
+                node.lit = Lit::Str(new_lit);
+            } else {
+                syn::visit_mut::visit_expr_lit_mut(self, node);
+            }
+        }
     }
 
     fn visit_generics_mut(&mut self, i: &mut Generics) {
@@ -337,19 +380,17 @@ impl VisitMut for Subst {
         syn::visit_mut::visit_generics_mut(self, i);
     }
 
-    fn visit_expr_lit_mut(&mut self, node: &mut ExprLit) {
-        if let Lit::Str(lit) = &node.lit {
-            // substitutes "${T}" in expression literals (not used in macros, see visit_macro_mut)
-            if let Some(ts_str) = replace_str(
-                &lit.to_token_stream().to_string(),
-                &format!("${{{}}}", pathname(&self.current_type)),
-                &pathname(self.new_types.first().unwrap()))
-            {
-                let new_lit: LitStr = parse_str(&ts_str).expect(&format!("parsing LitStr failed: {}", ts_str));
-                node.lit = Lit::Str(new_lit);
-            } else {
-                syn::visit_mut::visit_expr_lit_mut(self, node);
-            }
+    fn visit_macro_mut(&mut self, node: &mut Macro) {
+        // substitutes "${T}" in macros
+        if let Some(ts_str) = replace_str(
+            &node.tokens.to_string(),
+            &format!("${{{}}}", pathname(&self.current_type)),
+            &pathname(self.new_types.first().unwrap()))
+        {
+            let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing Macro failed: {}", ts_str));
+            node.tokens = new_ts;
+        } else {
+            syn::visit_mut::visit_macro_mut(self, node);
         }
     }
 
@@ -398,55 +439,6 @@ impl VisitMut for Subst {
         }
     }
 
-    fn visit_type_path_mut(&mut self, typepath: &mut TypePath) {
-        self.can_subst_path.push(true);
-        let TypePath { path, .. } = typepath;
-        if VERBOSE { println!("typepath: {}", pathname(path)); }
-        syn::visit_mut::visit_type_path_mut(self, typepath);
-        self.can_subst_path.pop();
-    }
-
-    fn visit_macro_mut(&mut self, node: &mut Macro) {
-        // substitutes "${T}" in macros
-        if let Some(ts_str) = replace_str(
-            &node.tokens.to_string(),
-            &format!("${{{}}}", pathname(&self.current_type)),
-            &pathname(self.new_types.first().unwrap()))
-        {
-            let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing Macro failed: {}", ts_str));
-            node.tokens = new_ts;
-        } else {
-            syn::visit_mut::visit_macro_mut(self, node);
-        }
-    }
-
-    fn visit_attribute_mut(&mut self, node: &mut Attribute) {
-        if let Some(PathSegment { ident, .. }) = node.path.segments.first() {
-            match ident.to_string().as_str() {
-                "doc" => {
-                    if let Some(ts_str) = replace_str(
-                        &node.tokens.to_string(),
-                        &format!("${{{}}}", pathname(&self.current_type)),
-                        &pathname(self.new_types.first().unwrap()))
-                    {
-                        let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing attribute failed: {}", ts_str));
-                        node.tokens = new_ts;
-                    }
-                    return
-                }
-                "trait_gen" => {
-                    if VERBOSE { println!("#trait_gen: '{}' in {}", pathname(&self.current_type), pathname(&node.tokens)); }
-                    let new_args = process_attr_args(self, node.tokens.clone());
-                    if VERBOSE { println!("=> #trait_gen: {}", pathname(&new_args)); }
-                    node.tokens = new_args;
-                    return
-                }
-                _ => ()
-            }
-        }
-        syn::visit_mut::visit_attribute_mut(self, node);
-    }
-
     fn visit_type_mut(&mut self, node: &mut Type) {
         if !self.is_path {
             match node {
@@ -471,6 +463,14 @@ impl VisitMut for Subst {
         } else {
             syn::visit_mut::visit_type_mut(self, node);
         }
+    }
+
+    fn visit_type_path_mut(&mut self, typepath: &mut TypePath) {
+        self.can_subst_path.push(true);
+        let TypePath { path, .. } = typepath;
+        if VERBOSE { println!("typepath: {}", pathname(path)); }
+        syn::visit_mut::visit_type_path_mut(self, typepath);
+        self.can_subst_path.pop();
     }
 }
 
