@@ -154,6 +154,7 @@ use syn::token::Colon2;
 use syn::visit_mut::VisitMut;
 
 const VERBOSE: bool = false;
+const VERBOSE_TF: bool = false;
 
 //==============================================================================
 // Main substitution types and their trait implementations
@@ -581,7 +582,11 @@ impl Parse for AttrParams {
 /// Attribute argument parser used for the procedural macro being processed
 impl Parse for Subst {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (current_type, types, legacy) = parse_parameters(input)?;
+        let (current_type, mut types, legacy) = parse_parameters(input)?;
+        let mut visitor = TurboFish;
+        for ty in types.iter_mut() {
+            visitor.visit_type_mut(ty);
+        }
         let is_path = types.iter().all(|ty| matches!(ty, Type::Path(_)));
         let new_types = types.into_iter()
             .map(|ty|
@@ -599,76 +604,24 @@ impl Parse for Subst {
     }
 }
 
+//------------------------------------------------------------------------------
+
+// This type is only used to implement the VisitMut trait.
+struct TurboFish;
+
 /// Adds the turbofish double-colon whenever possible to avoid post-substitution problems.
 ///
 /// The replaced part may be an expression requiring it, or a type that doesn't require the
 /// double-colon but accepts it. Handling both cases would be complicated so we always include it.
-trait Turbofish {
-    fn set_tubofish(&mut self);
-}
-
-impl Turbofish for Path {
-    fn set_tubofish(&mut self) {
-        for segment in &mut self.segments {
+impl VisitMut for TurboFish {
+    fn visit_path_mut(&mut self, node: &mut Path) {
+        if VERBOSE_TF {
+            println!("TURBOF: path '{}'", pathname(node));
+        }
+        for segment in &mut node.segments {
             if let PathArguments::AngleBracketed(generic_args) = &mut segment.arguments {
                 generic_args.colon2_token = Some(Colon2::default());
             }
-        }
-    }
-}
-
-impl Turbofish for Type {
-    fn set_tubofish(&mut self) {
-        if VERBOSE {
-            print!("turbofish: {} = ", pathname(self));
-            match self {
-                Type::Array(_) => println!("Type::Array"),
-                Type::BareFn(_) => println!("Type::BareFn"),
-                Type::Group(_) => println!("Type::Group"),
-                Type::ImplTrait(_) => println!("Type::ImplTrait"),
-                Type::Infer(_) => println!("Type::Infer"),
-                Type::Macro(_) => println!("Type::Macro"),
-                Type::Never(_) => println!("Type::Never"),
-                Type::Paren(_) => println!("Type::Paren"),
-                Type::Path(_) => println!("Type::Path"),
-                Type::Ptr(_) => println!("Type::Ptr"),
-                Type::Reference(_) => println!("Type::Reference"),
-                Type::Slice(_) => println!("Type::Slice"),
-                Type::TraitObject(_) => println!("Type::TraitObject"),
-                Type::Tuple(_) => println!("Type::Tuple"),
-                Type::Verbatim(_) => println!("Type::Verbatim"),
-                _ => println!("?? {:?}", self),
-            }
-        }
-        match self {
-            Type::Array(a) => a.elem.set_tubofish(),
-            Type::BareFn(f) => {
-                for i in &mut f.inputs { i.ty.set_tubofish(); }
-                if let syn::ReturnType::Type(_, ty) = &mut f.output { ty.set_tubofish(); }
-            }
-            Type::Group(_) => {}
-            Type::ImplTrait(_) => {}
-            Type::Infer(_) => {}
-            Type::Macro(_) => {}
-            Type::Never(_) => {}
-            Type::Paren(_) => {}
-            Type::Path(p) => p.path.set_tubofish(),
-            Type::Ptr(p) => p.elem.set_tubofish(),
-            Type::Reference(r) => r.elem.set_tubofish(),
-            Type::Slice(s) => s.elem.set_tubofish(),
-            Type::TraitObject(_) => {}
-            Type::Tuple(t) => for ty in &mut t.elems { ty.set_tubofish(); }
-            Type::Verbatim(_) => {}
-            _ => {}
-        }
-    }
-}
-
-impl Turbofish for SubstType {
-    fn set_tubofish(&mut self) {
-        match self {
-            SubstType::Path(path) => path.set_tubofish(),
-            SubstType::Type(ty) => ty.set_tubofish()
         }
     }
 }
@@ -736,12 +689,7 @@ impl Turbofish for SubstType {
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut types = parse_macro_input!(args as Subst);
-    for ty in types.new_types.iter_mut() {
-        // the turbofish is necessary in expressions, and not an error elsewhere, we simplify
-        // by setting the turbofish in all replacements:
-        ty.set_tubofish();
-    }
-    if VERBOSE {
+    if VERBOSE || VERBOSE_TF {
         println!("{}\ntrait_gen for {} -> {}: {}",
                  "=".repeat(80),
                  pathname(&types.generic_arg),
@@ -749,7 +697,15 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
                  &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")
         )
     }
-    if VERBOSE { println!("\n{}\n{}", item, "-".repeat(80)); }
+    if VERBOSE || VERBOSE_TF {
+        println!("{}\ntrait_gen for {} -> {}: {}",
+                 "-".repeat(80),
+                 pathname(&types.generic_arg),
+                 if types.is_path { "PATH" } else { "TYPE" },
+                 &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")
+        )
+    }
+    if VERBOSE || VERBOSE_TF { println!("\n{}\n{}", item, "-".repeat(80)); }
     let ast: File = syn::parse(item).unwrap();
     let mut output = TokenStream::new();
     while !types.new_types.is_empty() {
