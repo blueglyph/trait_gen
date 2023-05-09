@@ -233,9 +233,9 @@ impl MyLog for T {
     }
 }
 
-#[trait_gen(U -> u8, u16, u32, u64, u128)]
-#[trait_gen(T -> &U, &mut U, Box<U>)]
-impl MyLog for T {
+#[trait_gen(T -> u8, u16, u32, u64, u128)]
+#[trait_gen(U -> &T, &mut T, Box<T>)]
+impl MyLog for U {
     fn my_log2(self) -> u32 {
         MyLog::my_log2(*self)
     }

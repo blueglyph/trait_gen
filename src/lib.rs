@@ -672,14 +672,16 @@ impl VisitMut for TurboFish {
 /// # trait MyLog { fn my_log2(self) -> u32; }
 /// #[trait_gen(T -> u8, u16, u32, u64, u128)]
 /// impl MyLog for T {
+///     /// Logarithm base 2 for `${T}`
 ///     fn my_log2(self) -> u32 {
 ///         T::BITS - 1 - self.leading_zeros()
 ///     }
 /// }
 ///
-/// #[trait_gen(U -> u8, u16, u32, u64, u128)]
-/// #[trait_gen(T -> &U, &mut U, Box<U>)]
-/// impl MyLog for T {
+/// #[trait_gen(T -> u8, u16, u32, u64, u128)]
+/// #[trait_gen(U -> &T, &mut T, Box<T>)]
+/// impl MyLog for U {
+///     /// Logarithm base 2 for `${U}`
 ///     fn my_log2(self) -> u32 {
 ///         MyLog::my_log2(*self)
 ///     }
