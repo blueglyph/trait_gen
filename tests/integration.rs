@@ -505,22 +505,45 @@ mod type_fn_args {
 }
 
 mod cross_product {
+    use std::ops::Neg;
     use trait_gen::trait_gen;
 
+    #[derive(PartialEq, Debug)]
     struct Meter<U>(U);
+    #[derive(PartialEq, Debug)]
     struct Foot<U>(U);
 
     trait GetLength<T> {
         fn length(&self) -> T;
     }
 
-    // #[trait_gen(T -> Meter, Foot)]
-    // #[trait_gen(U -> f32, f64)]
-    // impl GetLength<U> for T<U> {
-    //     fn length(&self) -> U {
-    //         self.0 as U
+    // Type method implementations
+
+    #[trait_gen(T -> f32, f64)]
+    #[trait_gen(U -> Meter<T>, Foot<T>)]
+    impl U {
+        fn scale(&self, value: T) -> U {
+            U(self.0 * value)
+        }
+    }
+
+    // Without the macro:
+    //
+    // use std::ops::Mul;
+    //
+    // impl<T: Mul<T, Output = T> + Copy> Meter<T> {
+    //     fn scale(&self, value: T) -> Meter<T> {
+    //         Meter(self.0 * value)
     //     }
     // }
+    //
+    // impl<T: Mul<T, Output = T> + Copy> Foot<T> {
+    //     fn scale(&self, value: T) -> Foot<T> {
+    //         Foot(self.0 * value)
+    //     }
+    // }
+
+    // Trait implementations
 
     #[trait_gen(T -> Meter<U>, Foot<U>)]
     #[trait_gen(U -> f32, f64)]
@@ -530,16 +553,34 @@ mod cross_product {
         }
     }
 
+    #[trait_gen(T -> Meter<U>, Foot<U>)]
+    #[trait_gen(U -> f32, f64)]
+    impl Neg for T {
+        type Output = T;
+
+        fn neg(self) -> Self::Output {
+            T(-self.0)
+        }
+    }
+
     #[test]
     fn test() {
         let m_32 = Meter(1.0_f32);
-        let m_64 = Meter(2.0);
+        let m_64 = Meter(2.0_f64);
         let f_32 = Foot(3.0_f32);
-        let f_64 = Foot(4.0);
+        let f_64 = Foot(4.0_f64);
         assert_eq!(m_32.length(), 1.0_f32);
         assert_eq!(m_64.length(), 2.0_f64);
         assert_eq!(f_32.length(), 3.0_f32);
         assert_eq!(f_64.length(), 4.0_f64);
+        assert_eq!(m_32.scale(10.0), Meter(10.0_f32));
+        assert_eq!(m_64.scale(10.0), Meter(20.0_f64));
+        assert_eq!(f_32.scale(10.0), Foot(30.0_f32));
+        assert_eq!(f_64.scale(10.0), Foot(40.0_f64));
+        assert_eq!(-m_32, Meter(-1.0_f32));
+        assert_eq!(-m_64, Meter(-2.0_f64));
+        assert_eq!(-f_32, Foot(-3.0_f32));
+        assert_eq!(-f_64, Foot(-4.0_f64));
     }
 }
 
