@@ -8,8 +8,64 @@
 //     // (T needn't be an alias or an existing type)
 //     #[trait_gen(T -> Meter, Foot, Mile)]
 // or
+//     #[trait_gen(T in [Meter, Foot, Mile])]
+// or
 //     #[trait_gen(Meter -> Meter, Foot, Mile)]
 // -----------------------------------------------------------------------------
+
+mod supported_formats {
+    use trait_gen::trait_gen;
+
+    struct Test<T>(T);
+
+    // legacy format
+    #[trait_gen(i8, u8)]
+    impl Test<i8> {
+        fn test() -> bool { true }
+    }
+
+    // main format
+    #[trait_gen(T -> i16, u16)]
+    impl Test<T> {
+        fn test() -> bool { true }
+    }
+
+    // alternate format with 'in' and brackets
+    #[trait_gen(T in [i32, u32])]
+    impl Test<T> {
+        fn test() -> bool { true }
+    }
+
+    // verifies that brackets can be used for types with the '->' syntax
+    #[trait_gen(T -> [i64;2])]
+    impl Test<T> {
+        fn test() -> bool { true }
+    }
+
+    #[trait_gen(T -> &[u64])]
+    impl Test<T> {
+        fn test() -> bool { true }
+    }
+
+    // verifies that brackets can be used for types with the 'in' syntax
+    #[trait_gen(T in [[i128;2]])]
+    impl Test<T> {
+        fn test() -> bool { true }
+    }
+
+    #[test]
+    fn test() {
+        assert!(Test::<i8>::test());
+        assert!(Test::<u8>::test());
+        assert!(Test::<i16>::test());
+        assert!(Test::<u16>::test());
+        assert!(Test::<i32>::test());
+        assert!(Test::<u32>::test());
+        assert!(Test::<[i64;2]>::test());
+        assert!(Test::<&[u64]>::test());
+        assert!(Test::<[i128;2]>::test());
+    }
+}
 
 mod type_case_01 {
     use trait_gen::trait_gen;

@@ -1,3 +1,7 @@
+# 0.2.2 (2023-05-12)
+
+- add alternative format `#[trait_gen(T in [u64, i64, u32, i32])]`
+
 # 0.2.1 (2023-04-11)
 
 - simplify marcro argument processing

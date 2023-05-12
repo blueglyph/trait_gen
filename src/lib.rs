@@ -79,6 +79,21 @@
 //! For more examples, look at the [README.md](https://github.com/blueglyph/trait_gen/blob/v0.2.0/README.md)
 //! or the crate [integration tests](https://github.com/blueglyph/trait_gen/blob/v0.2.0/tests/integration.rs).
 //!
+//! ## Alternative Format
+//!
+//! The following format is also supported, with `in` instead of an arrow and the argument types between square brackets:
+//!
+//! ```rust
+//! # use trait_gen::trait_gen;
+//! # trait MyLog { fn my_log2(self) -> u32; }
+//! #[trait_gen(T in [u8, u16, u32, u64, u128])]
+//! impl MyLog for T {
+//!     fn my_log2(self) -> u32 {
+//!         T::BITS - 1 - self.leading_zeros()
+//!     }
+//! }
+//! ```
+//!
 //! ## Legacy Format
 //!
 //! The attribute used a shorter format in earlier versions, which is still supported even though it
@@ -143,10 +158,7 @@ use proc_macro::TokenStream;
 use std::fmt::{Display, Formatter};
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{
-    Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr,
-    ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parenthesized, parse2, Error,
-};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parenthesized, parse2, Error, bracketed};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -538,33 +550,46 @@ fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_
     }
 }
 
-/// Parses the attribute arguments.
+/// Parses the attribute arguments, and extracts the generic argument and the types that must substitute it.
 ///
-/// There are two syntaxes:
+/// There are three syntaxes:
 /// - `T -> Type1, Type2, Type3`
+/// - `T in [Type1, Type2, Type3]`
 /// - `Type1, Type2, Type3` (legacy format)
 ///
 /// Returns (path, types, legacy), where
 /// - `path` is the generic argument `T` (or `Type1` in legacy format)
 /// - `types` is a vector of parsed `Type` items: `Type1, Type2, Type3` (or `Type2, Type3` in legacy)
 /// - `legacy` is true if the legacy format is used
+///
+/// Note: we don't include `Type1` in `types` for the legacy format because the original stream will be copied
+/// in the generated code, so only the remaining types are requires for the substitutions.
 fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, bool)> {
     let current_type = input.parse::<Path>()?;
     let types: Vec<Type>;
-    let legacy: bool;
-    if input.peek(Token![->]) {
-        input.parse::<Token![->]>()?;
+    let format_arrow = input.peek(Token![->]);                  // "T -> Type1, Type2, Type3"
+    let format_in = !format_arrow && input.peek(Token![in]);    // "T in [Type1, Type2, Type3]"
+    let legacy = !format_arrow && !format_in;                   // "Type1, Type2, Type3"
+    if legacy {
+        input.parse::<Token![,]>()?;
         let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
+        types = vars.into_iter().collect();
+    } else {
+        let vars = if format_in {
+            // removes the "in [" ... "]" and parses the arguments
+            input.parse::<Token![in]>()?;
+            let content;
+            bracketed!(content in input);
+            Punctuated::<Type, Token![,]>::parse_terminated(&content.into())?
+        } else {
+            // removes the "->" and parses the arguments
+            input.parse::<Token![->]>()?;
+            Punctuated::<Type, Token![,]>::parse_terminated(input)?
+        };
         types = vars.into_iter().collect();
         if types.is_empty() {
             return Err(Error::new(input.span(), "expected type"));
         }
-        legacy = false;
-    } else {
-        input.parse::<Token![,]>()?;
-        let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
-        types = vars.into_iter().collect();
-        legacy = true;
     }
     Ok((current_type, types, legacy))
 }
