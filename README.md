@@ -6,10 +6,11 @@
 <hr/>
 
 <!-- TOC -->
-* [The 'trait-gen' Crate](#the--trait-gen-crate)
+* [The 'trait-gen' Crate](#the-trait-gen-crate)
   * [Usage](#usage)
   * [Motivation](#motivation)
   * [Examples](#examples)
+  * [Alternative Format](#alternative-format)
   * [Legacy Format](#legacy-format)
   * [IDE Code Awareness](#ide-code-awareness)
   * [Limitations](#limitations)
