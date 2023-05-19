@@ -197,6 +197,8 @@ struct Subst {
     new_types: Vec<SubstType>,
     /// legacy format if true
     legacy: bool,
+    /// test format `in [...]` if true
+    format_in: bool,
     /// Path substitution items if true, Type items if false
     is_path: bool,
     /// Context stack, cannot substitue paths when last is false (can substitute if empty)
@@ -561,10 +563,11 @@ fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_
 /// - `path` is the generic argument `T` (or `Type1` in legacy format)
 /// - `types` is a vector of parsed `Type` items: `Type1, Type2, Type3` (or `Type2, Type3` in legacy)
 /// - `legacy` is true if the legacy format is used
+/// - `format_in` is true if the `in [Type1, Type2, Type3]` format is used
 ///
 /// Note: we don't include `Type1` in `types` for the legacy format because the original stream will be copied
 /// in the generated code, so only the remaining types are requires for the substitutions.
-fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, bool)> {
+fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, bool, bool)> {
     let current_type = input.parse::<Path>()?;
     let types: Vec<Type>;
     let format_arrow = input.peek(Token![->]);                  // "T -> Type1, Type2, Type3"
@@ -576,7 +579,6 @@ fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, 
         types = vars.into_iter().collect();
     } else {
         let vars = if format_in {
-            // removes the "in [" ... "]" and parses the arguments
             input.parse::<Token![in]>()?;
             let content;
             bracketed!(content in input);
@@ -591,7 +593,7 @@ fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, 
             return Err(Error::new(input.span(), "expected type"));
         }
     }
-    Ok((current_type, types, legacy))
+    Ok((current_type, types, legacy, format_in))
 }
 
 /// Attribute parser used for inner attributes
@@ -599,7 +601,7 @@ impl Parse for AttrParams {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let content;
         parenthesized!(content in input);
-        let (current_type, types, legacy) = parse_parameters(&content.into())?;
+        let (current_type, types, legacy, _) = parse_parameters(&content.into())?;
         Ok(AttrParams { generic_arg: current_type, new_types: types, legacy })
     }
 }
@@ -607,7 +609,7 @@ impl Parse for AttrParams {
 /// Attribute argument parser used for the procedural macro being processed
 impl Parse for Subst {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (current_type, mut types, legacy) = parse_parameters(input)?;
+        let (current_type, mut types, legacy, format_in) = parse_parameters(input)?;
         let mut visitor = TurboFish;
         for ty in types.iter_mut() {
             visitor.visit_type_mut(ty);
@@ -625,7 +627,7 @@ impl Parse for Subst {
                     SubstType::Type(ty)
                 })
             .collect::<Vec<_>>();
-        Ok(Subst { generic_arg: current_type, new_types: new_types, legacy, is_path, can_subst_path: Vec::new() })
+        Ok(Subst { generic_arg: current_type, new_types: new_types, legacy, format_in, is_path, can_subst_path: Vec::new() })
     }
 }
 
@@ -716,17 +718,18 @@ impl VisitMut for TurboFish {
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut types = parse_macro_input!(args as Subst);
-    if VERBOSE || VERBOSE_TF {
-        println!("{}\ntrait_gen for {} -> {}: {}",
-                 "=".repeat(80),
-                 pathname(&types.generic_arg),
-                 if types.is_path { "PATH" } else { "TYPE" },
-                 &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")
-        )
+    if types.format_in {
+        let message = format!(
+            "Use of temporary format '{} in [{}]' in #[trait_gen] macro",
+             pathname(&types.generic_arg),
+             &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
+        );
+        // no way to generate warnings in Rust
+        eprintln!("{}\nWARNING: \n{}", "=".repeat(80), message);
     }
     if VERBOSE || VERBOSE_TF {
         println!("{}\ntrait_gen for {} -> {}: {}",
-                 "-".repeat(80),
+                 "=".repeat(80),
                  pathname(&types.generic_arg),
                  if types.is_path { "PATH" } else { "TYPE" },
                  &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")
