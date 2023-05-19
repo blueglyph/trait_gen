@@ -30,6 +30,7 @@ mod supported_formats {
         fn test() -> bool { true }
     }
 
+    #[cfg(feature = "in_format")]
     // alternate format with 'in' and brackets
     #[trait_gen(T in [i32, u32])]
     impl Test<T> {
@@ -47,6 +48,7 @@ mod supported_formats {
         fn test() -> bool { true }
     }
 
+    #[cfg(feature = "in_format")]
     // verifies that brackets can be used for types with the 'in' syntax
     #[trait_gen(T in [[i128;2]])]
     impl Test<T> {
@@ -59,10 +61,13 @@ mod supported_formats {
         assert!(Test::<u8>::test());
         assert!(Test::<i16>::test());
         assert!(Test::<u16>::test());
+        #[cfg(feature = "in_format")]
         assert!(Test::<i32>::test());
+        #[cfg(feature = "in_format")]
         assert!(Test::<u32>::test());
         assert!(Test::<[i64;2]>::test());
         assert!(Test::<&[u64]>::test());
+        #[cfg(feature = "in_format")]
         assert!(Test::<[i128;2]>::test());
     }
 }

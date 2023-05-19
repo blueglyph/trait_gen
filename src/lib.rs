@@ -79,21 +79,6 @@
 //! For more examples, look at the [README.md](https://github.com/blueglyph/trait_gen/blob/v0.2.0/README.md)
 //! or the crate [integration tests](https://github.com/blueglyph/trait_gen/blob/v0.2.0/tests/integration.rs).
 //!
-//! ## Alternative Format
-//!
-//! The following format is also supported, with `in` instead of an arrow and the argument types between square brackets:
-//!
-//! ```rust
-//! # use trait_gen::trait_gen;
-//! # trait MyLog { fn my_log2(self) -> u32; }
-//! #[trait_gen(T in [u8, u16, u32, u64, u128])]
-//! impl MyLog for T {
-//!     fn my_log2(self) -> u32 {
-//!         T::BITS - 1 - self.leading_zeros()
-//!     }
-//! }
-//! ```
-//!
 //! ## Legacy Format
 //!
 //! The attribute used a shorter format in earlier versions, which is still supported even though it
@@ -118,6 +103,32 @@
 //! #[trait_gen(Type1 -> Type1, Type2, Type3)]
 //! impl Trait for Type1 {
 //!     // ...
+//! }
+//! ```
+//!
+//! ## Alternative Format
+//!
+//! The following format is also supported when the following feature is enabled:
+//!
+//! ```cargo
+//! trait-gen = { version="0.3", features=["in_format"] }
+//! ```
+//!
+//! **<u>Warning</u>: This feature is temporary and there is no guarantee that it will be maintained.**
+//!
+//! Here, `in` is used instead of an arrow `->` and the argument types must be between square brackets:
+//!
+//! ```rust
+//! # use trait_gen::trait_gen;
+//! # trait MyLog { fn my_log2(self) -> u32; }
+//! # #[cfg(feature = "in_format")]
+//! #[trait_gen(T in [u8, u16, u32, u64, u128])]
+//! # #[cfg(not(feature = "in_format"))]
+//! # #[trait_gen(T -> u8, u16, u32, u64, u128)]
+//! impl MyLog for T {
+//!     fn my_log2(self) -> u32 {
+//!         T::BITS - 1 - self.leading_zeros()
+//!     }
 //! }
 //! ```
 //!
@@ -158,12 +169,15 @@ use proc_macro::TokenStream;
 use std::fmt::{Display, Formatter};
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parenthesized, parse2, Error, bracketed};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parenthesized, parse2, Error};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::token::Colon2;
+use syn::token::{Colon2, Comma};
 use syn::visit_mut::VisitMut;
+
+#[cfg(feature="in_format")]
+use syn::bracketed;
 
 const VERBOSE: bool = false;
 const VERBOSE_TF: bool = false;
@@ -568,6 +582,9 @@ fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, 
     let current_type = input.parse::<Path>()?;
     let types: Vec<Type>;
     let format_arrow = input.peek(Token![->]);                  // "T -> Type1, Type2, Type3"
+    #[cfg(not(feature = "in_format"))]
+    let format_in = false;
+    #[cfg(feature = "in_format")]
     let format_in = !format_arrow && input.peek(Token![in]);    // "T in [Type1, Type2, Type3]"
     let legacy = !format_arrow && !format_in;                   // "Type1, Type2, Type3"
     if legacy {
@@ -576,11 +593,7 @@ fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, 
         types = vars.into_iter().collect();
     } else {
         let vars = if format_in {
-            // removes the "in [" ... "]" and parses the arguments
-            input.parse::<Token![in]>()?;
-            let content;
-            bracketed!(content in input);
-            Punctuated::<Type, Token![,]>::parse_terminated(&content.into())?
+            parse_in_format(input)?
         } else {
             // removes the "->" and parses the arguments
             input.parse::<Token![->]>()?;
@@ -592,6 +605,21 @@ fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, 
         }
     }
     Ok((current_type, types, legacy))
+}
+
+#[cfg(feature = "in_format")]
+#[deprecated = "The format 'T in [Type1, Type2, Type3] is temporary."]
+fn parse_in_format(input: ParseStream) -> syn::parse::Result<Punctuated<Type, Comma>> {
+    // removes the "in [" ... "]" and parses the arguments
+    input.parse::<Token![in]>()?;
+    let content;
+    bracketed!(content in input);
+    Punctuated::<Type, Token![,]>::parse_terminated(&content.into())
+}
+
+#[cfg(not(feature = "in_format"))]
+fn parse_in_format(input: ParseStream) -> syn::parse::Result<Punctuated<Type, Comma>> {
+    Err(Error::new(input.span(), "this function should not be called"))
 }
 
 /// Attribute parser used for inner attributes

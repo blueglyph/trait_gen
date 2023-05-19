@@ -278,21 +278,6 @@ assert_eq!(2_u64.text(), "u64: 2");
 
 _Note: there is no escape code to avoid the substitution; if you need `${T}` for another purpose and you don't want it to be replaced, you have to choose another generic argument, for example `U` or `my::T`._ 
 
-## Alternative Format
-
-The following format is also supported, with `in` instead of an arrow and the argument types between square brackets:
-
-```rust
-use trait_gen::trait_gen;
-
-#[trait_gen(T in [u8, u16, u32, u64, u128])]
-impl MyLog for T {
-    fn my_log2(self) -> u32 {
-        T::BITS - 1 - self.leading_zeros()
-    }
-}
-```
-
 ## Legacy Format
 
 The attribute used a shorter format in earlier versions, which is still supported even though it may be more confusing to read:
@@ -349,6 +334,29 @@ impl ToU64 for u64 {
 ```
 
 This doesn't work because `u64` happens to be the first type of the list. To prevent it, use a different "initial" type like `i64`, or use the non-legacy format.
+
+## Alternative Format
+
+The following format is also supported when the following feature is enabled:
+
+```cargo
+trait-gen = { version="0.3", features=["in_format"] }
+```
+
+**<u>Warning</u>: This feature is temporary and there is no guarantee that it will be maintained.**
+
+Here, `in` is used instead of an arrow `->` and the argument types must be between square brackets:
+
+```rust
+use trait_gen::trait_gen;
+
+#[trait_gen(T in [u8, u16, u32, u64, u128])]
+impl MyLog for T {
+    fn my_log2(self) -> u32 {
+        T::BITS - 1 - self.leading_zeros()
+    }
+}
+```
 
 ## IDE Code Awareness
 

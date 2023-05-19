@@ -16,6 +16,9 @@ readme = "README.md"
 [lib]
 proc-macro = true
 
+[features]
+in_format = []
+
 [dependencies]
 quote = "1.0.23"
 proc-macro2 = { version = "1.0.51", features = ["span-locations"] }
