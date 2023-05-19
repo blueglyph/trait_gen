@@ -944,8 +944,9 @@ mod impl_type_01 {
 
     #[trait_gen(T -> f32, f64)]
     impl Foot<T> {
+        const METERS_TO_FEET: T = 3.372;
         fn from_meter(x: Meter<T>) -> Self {
-            Foot(x.0 * 3.372)
+            Foot(x.0 * Self::METERS_TO_FEET)
         }
     }
 
@@ -953,6 +954,8 @@ mod impl_type_01 {
     fn test() {
         assert_eq!(Foot::<f32>::from_meter(Meter(1.0_f32)).0, 3.372_f32);
         assert_eq!(Foot::<f64>::from_meter(Meter(1.0_f64)).0, 3.372_f64);
+        assert_eq!(Foot::<f32>::METERS_TO_FEET, 3.372_f32);
+        assert_eq!(Foot::<f64>::METERS_TO_FEET, 3.372_f64);
     }
 }
 
