@@ -10,8 +10,8 @@
   * [Usage](#usage)
   * [Motivation](#motivation)
   * [Examples](#examples)
-  * [Alternative Format](#alternative-format)
   * [Legacy Format](#legacy-format)
+  * [Alternative Format](#alternative-format)
   * [IDE Code Awareness](#ide-code-awareness)
   * [Limitations](#limitations)
 * [Compatibility](#compatibility)
@@ -337,7 +337,7 @@ This doesn't work because `u64` happens to be the first type of the list. To pre
 
 ## Alternative Format
 
-The following format is also supported when the following feature is enabled:
+An alternative format is also supported when the `in_format` feature is enabled:
 
 ```cargo
 trait-gen = { version="0.3", features=["in_format"] }
@@ -357,6 +357,8 @@ impl MyLog for T {
     }
 }
 ```
+
+Using this format issues 'deprecated' warnings, that you can turn off by adding the `#![allow(deprecated)]` directive at the top of the file, or by adding `#[allow(deprecated)]` where the generated code is used.
 
 ## IDE Code Awareness
 

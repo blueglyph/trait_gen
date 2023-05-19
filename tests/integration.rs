@@ -61,13 +61,16 @@ mod supported_formats {
         assert!(Test::<u8>::test());
         assert!(Test::<i16>::test());
         assert!(Test::<u16>::test());
-        #[cfg(feature = "in_format")]
-        assert!(Test::<i32>::test());
-        #[cfg(feature = "in_format")]
-        assert!(Test::<u32>::test());
         assert!(Test::<[i64;2]>::test());
         assert!(Test::<&[u64]>::test());
-        #[cfg(feature = "in_format")]
+    }
+
+    #[allow(deprecated)]
+    #[cfg(feature = "in_format")]
+    #[test]
+    fn test_in_format() {
+        assert!(Test::<i32>::test());
+        assert!(Test::<u32>::test());
         assert!(Test::<[i128;2]>::test());
     }
 }

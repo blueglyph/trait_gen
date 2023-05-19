@@ -1,3 +1,8 @@
+# 0.3.0 (2023-05-19)
+
+- move format `#[trait_gen(T in [u64, i64, u32, i32])]` into feature
+- add 'deprecated' warnings when using this 'in' format
+
 # 0.2.2 (2023-05-12)
 
 - add alternative format `#[trait_gen(T in [u64, i64, u32, i32])]`

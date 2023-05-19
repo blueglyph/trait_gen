@@ -22,4 +22,5 @@ jobs:
       run: |
         rustc -V
         cargo test --verbose
+        cargo test --verbose --all-features
         cargo test -r --verbose

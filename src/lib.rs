@@ -108,7 +108,7 @@
 //!
 //! ## Alternative Format
 //!
-//! The following format is also supported when the following feature is enabled:
+//! An alternative format is also supported when the `in_format` feature is enabled:
 //!
 //! ```cargo
 //! trait-gen = { version="0.3", features=["in_format"] }
@@ -131,6 +131,9 @@
 //!     }
 //! }
 //! ```
+//!
+//! Using this format issues 'deprecated' warnings, that you can turn off by adding the `#![allow(deprecated)]`
+//! directive at the top of the file, or by adding `#[allow(deprecated)]` where the generated code is used.
 //!
 //! ## Limitations
 //!
@@ -169,15 +172,12 @@ use proc_macro::TokenStream;
 use std::fmt::{Display, Formatter};
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parenthesized, parse2, Error};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parenthesized, parse2, Error, bracketed};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::token::{Colon2, Comma};
+use syn::token::Colon2;
 use syn::visit_mut::VisitMut;
-
-#[cfg(feature="in_format")]
-use syn::bracketed;
 
 const VERBOSE: bool = false;
 const VERBOSE_TF: bool = false;
@@ -735,15 +735,18 @@ impl VisitMut for TurboFish {
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut types = parse_macro_input!(args as Subst);
-    if types.format_in {
+    let warning = if types.format_in {
         let message = format!(
             "Use of temporary format '{} in [{}]' in #[trait_gen] macro",
              pathname(&types.generic_arg),
              &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
         );
         // no way to generate warnings in Rust
-        eprintln!("{}\nWARNING: \n{}", "=".repeat(80), message);
-    }
+        if VERBOSE || VERBOSE_TF { println!("{}\nWARNING: \n{}", "=".repeat(80), message); }
+        Some(message)
+    } else {
+        None
+    };
     if VERBOSE || VERBOSE_TF {
         println!("{}\ntrait_gen for {} -> {}: {}",
                  "=".repeat(80),
@@ -755,6 +758,11 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     if VERBOSE || VERBOSE_TF { println!("\n{}\n{}", item, "-".repeat(80)); }
     let ast: File = syn::parse(item).unwrap();
     let mut output = TokenStream::new();
+    if let Some(message) = warning {
+        output.extend(TokenStream::from(quote!(
+            #[deprecated = #message]
+        )));
+    }
     while !types.new_types.is_empty() {
         let mut modified_ast = ast.clone();
         types.visit_file_mut(&mut modified_ast);
