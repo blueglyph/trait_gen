@@ -211,8 +211,8 @@ struct Subst {
     new_types: Vec<SubstType>,
     /// legacy format if true
     legacy: bool,
-    /// test format `in [...]` if true
-    format_in: bool,
+    /// format `T in [...]` if true
+    in_format: bool,
     /// Path substitution items if true, Type items if false
     is_path: bool,
     /// Context stack, cannot substitue paths when last is false (can substitute if empty)
@@ -570,32 +570,29 @@ fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_
 ///
 /// There are three syntaxes:
 /// - `T -> Type1, Type2, Type3`
-/// - `T in [Type1, Type2, Type3]`
+/// - `T in [Type1, Type2, Type3]` (when "in_format" feature is enabled)
 /// - `Type1, Type2, Type3` (legacy format)
 ///
 /// Returns (path, types, legacy), where
 /// - `path` is the generic argument `T` (or `Type1` in legacy format)
 /// - `types` is a vector of parsed `Type` items: `Type1, Type2, Type3` (or `Type2, Type3` in legacy)
 /// - `legacy` is true if the legacy format is used
-/// - `format_in` is true if the `in [Type1, Type2, Type3]` format is used
+/// - `in_format` is true if the `T in [Type1, Type2, Type3]` format is used
 ///
 /// Note: we don't include `Type1` in `types` for the legacy format because the original stream will be copied
 /// in the generated code, so only the remaining types are requires for the substitutions.
 fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, bool, bool)> {
     let current_type = input.parse::<Path>()?;
     let types: Vec<Type>;
-    let format_arrow = input.peek(Token![->]);                  // "T -> Type1, Type2, Type3"
-    #[cfg(not(feature = "in_format"))]
-    let format_in = false;
-    #[cfg(feature = "in_format")]
-    let format_in = !format_arrow && input.peek(Token![in]);    // "T in [Type1, Type2, Type3]"
-    let legacy = !format_arrow && !format_in;                   // "Type1, Type2, Type3"
+    let arrow_format = input.peek(Token![->]);                  // "T -> Type1, Type2, Type3"
+    let in_format = !arrow_format && input.peek(Token![in]);    // "T in [Type1, Type2, Type3]"
+    let legacy = !arrow_format && !in_format;                   // "Type1, Type2, Type3"
     if legacy {
         input.parse::<Token![,]>()?;
         let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
         types = vars.into_iter().collect();
     } else {
-        let vars = if format_in {
+        let vars = if cfg!(feature = "in_format") && in_format {
             input.parse::<Token![in]>()?;
             let content;
             bracketed!(content in input);
@@ -610,7 +607,7 @@ fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, 
             return Err(Error::new(input.span(), "expected type"));
         }
     }
-    Ok((current_type, types, legacy, format_in))
+    Ok((current_type, types, legacy, in_format))
 }
 
 /// Attribute parser used for inner attributes
@@ -626,7 +623,7 @@ impl Parse for AttrParams {
 /// Attribute argument parser used for the procedural macro being processed
 impl Parse for Subst {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (current_type, mut types, legacy, format_in) = parse_parameters(input)?;
+        let (current_type, mut types, legacy, in_format) = parse_parameters(input)?;
         let mut visitor = TurboFish;
         for ty in types.iter_mut() {
             visitor.visit_type_mut(ty);
@@ -644,7 +641,7 @@ impl Parse for Subst {
                     SubstType::Type(ty)
                 })
             .collect::<Vec<_>>();
-        Ok(Subst { generic_arg: current_type, new_types: new_types, legacy, format_in, is_path, can_subst_path: Vec::new() })
+        Ok(Subst { generic_arg: current_type, new_types: new_types, legacy, in_format, is_path, can_subst_path: Vec::new() })
     }
 }
 
@@ -735,7 +732,7 @@ impl VisitMut for TurboFish {
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut types = parse_macro_input!(args as Subst);
-    let warning = if types.format_in {
+    let warning = if types.in_format {
         let message = format!(
             "Use of temporary format '{} in [{}]' in #[trait_gen] macro",
              pathname(&types.generic_arg),
