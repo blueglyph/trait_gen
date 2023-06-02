@@ -4,8 +4,8 @@
 
 //! # The trait_gen library
 //!
-//! This library provides an attribute macro to generate the trait implementations for a number of
-//! types, without the need for custom declarative macros, code repetition or blanket implementations.
+//! This library provides an attribute macro to generate the trait implementations for several
+//! types without needing custom declarative macros, code repetition, or blanket implementations.
 //! It makes the code easier to read and to maintain.
 //!
 //! Here is a short example:
@@ -54,22 +54,21 @@
 //! }
 //! ```
 //!
-//! The attribute macro successively substitutes the generic argument `T` in the code with each of
+//! The attribute macro successively substitutes the generic argument `T` in the code with
 //! the following types (`Type1`, `Type2`, `Type3`) to generate all the implementations.
 //!
 //! All the [type paths](https://doc.rust-lang.org/reference/paths.html#paths-in-types) beginning with `T`
 //! in the code have this part replaced. For example, `T::default()` generates `Type1::default()`,
 //! `Type2::default()` and so on, but `super::T` is unchanged because it belongs to another scope.
 //!
-//! The code must of course be compatible with all the types, or the compiler will trigger the relevant
+//! The code must be compatible with all the types, or the compiler will trigger the relevant
 //! errors. For example `#[trait_gen(T -> u64, f64)]` cannot be applied to `let x: T = 0;` because `0`
 //! is not a valid floating-point literal.
 //!
-//! Finally, any occurrence of `${T}` in doc comments, macros and string literals are replaced by the actual
-//! type in each implementation.
+//! Finally, the actual type replaces any `${T}` occurrence in doc comments, macros, and string literals.
 //!
 //! _Notes:_
-//! - _Using the letter "T" is not mandatory, any type path will do. For example, `gen::Type` is fine
+//! - _Using the letter "T" is not mandatory; any type path will do. For example, `gen::Type` is fine
 //! too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers
 //! are preferred._
 //! - _Two or more attributes can be written in front of the implementation code, to generate the cross-product
@@ -114,9 +113,9 @@
 //! trait-gen = { version="0.3", features=["in_format"] }
 //! ```
 //!
-//! **<u>Warning</u>: This feature is temporary and there is no guarantee that it will be maintained.**
+//! **<u>Warning</u>: This feature is temporary, and there is no guarantee that it will be maintained.**
 //!
-//! Here, `in` is used instead of an arrow `->` and the argument types must be between square brackets:
+//! Here, `in` is used instead of an arrow `->`, and the argument types must be between square brackets:
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
@@ -132,13 +131,13 @@
 //! }
 //! ```
 //!
-//! Using this format issues 'deprecated' warnings, that you can turn off by adding the `#![allow(deprecated)]`
-//! directive at the top of the file, or by adding `#[allow(deprecated)]` where the generated code is used.
+//! Using this format issues 'deprecated' warnings that you can turn off by adding the `#![allow(deprecated)]`
+//! directive at the top of the file or by adding `#[allow(deprecated)]` where the generated code is used.
 //!
 //! ## Limitations
 //!
 //! * The procedural macro of the `trait_gen` attribute can't handle scopes, so it doesn't support any
-//! type declaration with the same literal as the generic argument. This, for instance, fails to compile
+//! type declaration with the same literal as the generic argument. For instance, this code fails to compile
 //! because of the generic function:
 //!
 //!   ```rust, compile_fail
@@ -162,7 +161,7 @@
 //!   }
 //!   ```
 //!
-//! * The generic argument must be a [type path](https://doc.rust-lang.org/reference/paths.html#paths-in-types),
+//! * The generic argument must be a [type path](https://doc.rust-lang.org/reference/paths.html#paths-in-types);
 //! it cannot be a more complex type like a reference or a slice. So you can use `gen::T<U> -> ...`
 //! but not `&T -> ...`.
 
@@ -684,25 +683,24 @@ impl VisitMut for TurboFish {
 /// }
 /// ```
 ///
-/// The attribute macro successively substitutes the generic argument `T` in the code with each of
+/// The attribute macro successively substitutes the generic argument `T` in the code with
 /// the following types (`Type1`, `Type2`, `Type3`) to generate all the implementations.
 ///
 /// All the [type paths](https://doc.rust-lang.org/reference/paths.html#paths-in-types) beginning with `T`
 /// in the code have this part replaced. For example, `T::default()` generates `Type1::default()`,
-/// `Type2::default()` and so on, but `super::T` is unchanged because it belongs to another scope.
+/// `Type2::default()`, and so on, but `super::T` is unchanged because it belongs to another scope.
 ///
-/// The code must of course be compatible with all the types, or the compiler will trigger the relevant
-/// errors. For example `#[trait_gen(T -> u64, f64)]` cannot be applied to `let x: T = 0;` because `0`
+/// The code must be compatible with all the types, or the compiler will trigger the relevant
+/// errors. For example, `#[trait_gen(T -> u64, f64)]` cannot be applied to `let x: T = 0;`, because `0`
 /// is not a valid floating-point literal.
 ///
-/// Finally, any occurrence of `${T}` in doc comments, macros and string literals are replaced by the actual
-/// type in each implementation.
+/// Finally, the actual type replaces any `${T}` occurrence in doc comments, macros and string literals.
 ///
 /// _Notes:_
-/// - _Using the letter "T" is not mandatory, any type path will do. For example, `gen::Type` is fine
+/// - _Using the letter "T" is not mandatory; any type path will do. For example, `gen::Type` is fine
 /// too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers
 /// are preferred._
-/// - _Two or more attributes can be written in front of the implementation code, to generate the cross-product
+/// - _Two or more attributes can be written in front of the implementation code to generate the cross-product
 /// of their arguments._
 /// - _`trait_gen` can be used on type implementations too._
 ///
