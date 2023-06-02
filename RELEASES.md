@@ -1,3 +1,7 @@
+# 0.3.1 (2023-06-02)
+
+- update documentation
+
 # 0.3.0 (2023-05-19)
 
 - move format `#[trait_gen(T in [u64, i64, u32, i32])]` into feature
