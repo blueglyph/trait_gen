@@ -777,6 +777,41 @@ mod ex03a {
     }
 }
 
+mod ex04 {
+    use trait_gen::trait_gen;
+
+    trait A where Self: Sized {
+        fn a(self) -> i32 { 1 }
+    }
+
+    trait B where Self: Sized {
+        fn b(self) -> i32 { 2 }
+    }
+
+    // Use the macro to generate multiple traits for different types
+    #[trait_gen(T -> u32, i32, u64, i64)]
+    #[trait_gen(U -> A, B)]
+    impl U for T {}
+
+    #[test]
+    fn test() {
+        let u = 10_u32;
+        let v = 10_i32;
+        let w = 10_u64;
+        let x = 10_i64;
+
+        assert_eq!(u.a(), 1);
+        assert_eq!(v.a(), 1);
+        assert_eq!(w.a(), 1);
+        assert_eq!(x.a(), 1);
+
+        assert_eq!(u.b(), 2);
+        assert_eq!(v.b(), 2);
+        assert_eq!(w.b(), 2);
+        assert_eq!(x.b(), 2);
+    }
+}
+
 // =============================================================================
 // "Legacy" format:
 //
