@@ -75,7 +75,7 @@ Finally, the actual type replaces any `${T}` occurrence in doc comments, macros,
 
 _Notes:_
 - _Using the letter "T" is not mandatory; any type path will do. For example, `gen::Type` is fine too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers are preferred._
-- _Two or more attributes can be written in front of the implementation code to generate the cross-product of their arguments._
+- _Two or more attributes can be chained to generate all the combinations._
 - _`trait_gen` can be used on type implementations too._
 
 ## Motivation
@@ -177,7 +177,7 @@ impl GetLength<U> for Meter<U> {
 }
 ```
 
-This attribute can be combined with another one to create a _cross-product generator_, implementing the trait for `Meter<f32>`, `Meter<f64`, `Foot<f32>`, `Foot<f64>`:
+This attribute can be combined with another one to create a _generic composition_, implementing the trait for `Meter<f32>`, `Meter<f64>`, `Foot<f32>`, `Foot<f64>`:
 
 ```rust
 #[trait_gen(T -> Meter, Foot)]
@@ -242,7 +242,7 @@ impl MyLog for U {
 }
 ```
 
-As you see in the cross-product generator, the first generic argument `U` can be used in the second attribute argument list (the order of the attributes doesn't matter).
+As you see in the generic composition, the first generic argument `U` can be used in the second attribute argument list (the order of the attributes doesn't matter).
 
 Finally, this example shows how the documentation and string literals can be customized in each implementation by using the `${T}` format:
 

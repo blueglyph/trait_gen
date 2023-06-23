@@ -1,3 +1,7 @@
+# 0.3.2 (2023-06-23)
+
+- update documentation
+
 # 0.3.1 (2023-06-02)
 
 - update documentation

@@ -71,8 +71,7 @@
 //! - _Using the letter "T" is not mandatory; any type path will do. For example, `gen::Type` is fine
 //! too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers
 //! are preferred._
-//! - _Two or more attributes can be written in front of the implementation code, to generate the cross-product
-//! of their arguments._
+//! - _Two or more attributes can be chained to generate all the combinations._
 //! - _`trait_gen` can be used on type implementations too._
 //!
 //! For more examples, look at the [README.md](https://github.com/blueglyph/trait_gen/blob/v0.2.0/README.md)
@@ -700,8 +699,7 @@ impl VisitMut for TurboFish {
 /// - _Using the letter "T" is not mandatory; any type path will do. For example, `gen::Type` is fine
 /// too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers
 /// are preferred._
-/// - _Two or more attributes can be written in front of the implementation code to generate the cross-product
-/// of their arguments._
+/// - _Two or more attributes can be chained to generate all the combinations._
 /// - _`trait_gen` can be used on type implementations too._
 ///
 /// ## Examples
