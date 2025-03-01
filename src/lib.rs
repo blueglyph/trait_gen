@@ -466,7 +466,7 @@ impl VisitMut for Subst {
                         //     path     = gen :: T   <'_>    len = 2, subst enabled
                         //     new_path = mod :: Name        len = 2
                         //  => new_seg  = mod :: Name<'_>
-                        let mut nth_new_seg = new_seg.last_mut().unwrap();
+                        let nth_new_seg = new_seg.last_mut().unwrap();
                         let nth_seg = path.segments.iter().nth(length - 1).unwrap();
                         if nth_new_seg.arguments.is_empty() && !nth_seg.arguments.is_empty() {
                             nth_new_seg.arguments = nth_seg.arguments.clone();

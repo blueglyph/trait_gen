@@ -55,6 +55,12 @@ mod supported_formats {
         fn test() -> bool { true }
     }
 
+    #[trait_gen(T -> (u32, u32), (u8, u8))]
+    impl Test<T> {
+        #[allow(unused)]
+        fn test() -> bool { true }
+    }
+
     #[test]
     fn test() {
         assert!(Test::<i8>::test());
@@ -63,6 +69,7 @@ mod supported_formats {
         assert!(Test::<u16>::test());
         assert!(Test::<[i64;2]>::test());
         assert!(Test::<&[u64]>::test());
+        assert!(Test::<(u32, u32)>::test());
     }
 
     #[allow(deprecated)]
@@ -224,6 +231,7 @@ mod type_case_04 {
     impl Negate for U {
         type Output = T;
         fn negate(self) -> Self::Output {
+            #[allow(suspicious_double_ref_op)] // to fix with conditional?
             T(-self.deref().0)
         }
     }
@@ -447,32 +455,32 @@ mod path_case_06 {
 
 mod literals {
     use trait_gen::trait_gen;
-    static mut CALLS: Vec<String> = Vec::new();
 
     trait Lit {
-        fn text(&self) -> String;
+        fn text(&self, calls: &mut Vec<String>) -> String;
     }
 
-    fn call(s: &str) {
-        unsafe { CALLS.push(s.to_string()); }
+    fn call(calls: &mut Vec<String>, s: &str) {
+        calls.push(s.to_string());
     }
 
     #[trait_gen(T -> u32, u64)]
     impl Lit for T {
         /// Produces a string representation for ${T}
-        fn text(&self) -> String {
-            call("${T}");
+        fn text(&self, calls: &mut Vec<String>) -> String {
+            call(calls, "${T}");
             format!("${T}: {}", self)
         }
     }
 
     #[test]
     fn test() {
-        let s_32 = 10_u32.text();
-        let s_64 = 20_u64.text();
+        let mut calls = Vec::<String>::new();
+        let s_32 = 10_u32.text(&mut calls);
+        let s_64 = 20_u64.text(&mut calls);
         assert_eq!(s_32, "u32: 10");
         assert_eq!(s_64, "u64: 20");
-        assert_eq!(unsafe { CALLS.join(",") }, "u32,u64");
+        assert_eq!(calls.join(","), "u32,u64");
     }
 }
 
@@ -509,11 +517,15 @@ mod subst_cases {
 mod type_args {
     use trait_gen::trait_gen;
 
-    trait Number<X, T> { fn fake(x: X) -> T; }
+    trait Number<X, T> {
+        #[allow(unused)]
+        fn fake(x: X) -> T;
+    }
 
     #[trait_gen(T -> f32, f64)]
     // all trait arguments must change:
     impl Number<T, T> for T {
+        #[allow(unused)]
         /// my fake doc
         fn fake(_x: T) -> T { 1.0 as T }
     }
