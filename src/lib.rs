@@ -68,7 +68,7 @@
 //! Finally, the actual type replaces any `${T}` occurrence in doc comments, macros, and string literals.
 //!
 //! _Notes:_
-//! - _Using the letter "T" is not mandatory; any type path will do. For example, `gen::Type` is fine
+//! - _Using the letter "T" is not mandatory; any type path will do. For example, `g::Type` is fine
 //! too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers
 //! are preferred._
 //! - _Two or more attributes can be chained to generate all the combinations._
@@ -161,7 +161,7 @@
 //!   ```
 //!
 //! * The generic argument must be a [type path](https://doc.rust-lang.org/reference/paths.html#paths-in-types);
-//! it cannot be a more complex type like a reference or a slice. So you can use `gen::T<U> -> ...`
+//! it cannot be a more complex type like a reference or a slice. So you can use `g::T<U> -> ...`
 //! but not `&T -> ...`.
 
 mod tests;
@@ -462,8 +462,8 @@ impl VisitMut for Subst {
                             new_seg.push(seg.clone());
                         }
                         // check if orphan arguments:
-                        //     #[trait_gen(gen::T -> mod::Name, ...) { ... gen::T<'_> ... }
-                        //     path     = gen :: T   <'_>    len = 2, subst enabled
+                        //     #[trait_gen(g::T -> mod::Name, ...) { ... g::T<'_> ... }
+                        //     path     = g :: T   <'_>    len = 2, subst enabled
                         //     new_path = mod :: Name        len = 2
                         //  => new_seg  = mod :: Name<'_>
                         let nth_new_seg = new_seg.last_mut().unwrap();
@@ -540,8 +540,8 @@ fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_
         Ok(mut types) => {
             let mut output = proc_macro2::TokenStream::new();
             if !types.legacy {
-                let gen = types.generic_arg;
-                output.extend(quote!(#gen -> ));
+                let g = types.generic_arg;
+                output.extend(quote!(#g -> ));
             }
             let mut first = true;
             for ty in &mut types.new_types {
@@ -696,7 +696,7 @@ impl VisitMut for TurboFish {
 /// Finally, the actual type replaces any `${T}` occurrence in doc comments, macros and string literals.
 ///
 /// _Notes:_
-/// - _Using the letter "T" is not mandatory; any type path will do. For example, `gen::Type` is fine
+/// - _Using the letter "T" is not mandatory; any type path will do. For example, `g::Type` is fine
 /// too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers
 /// are preferred._
 /// - _Two or more attributes can be chained to generate all the combinations._

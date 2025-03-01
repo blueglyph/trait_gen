@@ -312,12 +312,12 @@ mod path_case_02 {
         use trait_gen::trait_gen;
         use std::ops::Add;
         
-        #[trait_gen(gen::U -> super::Meter<f32>, super::Foot<f32>)]
-        impl Add for gen::U {
-            type Output = gen::U;
+        #[trait_gen(g::U -> super::Meter<f32>, super::Foot<f32>)]
+        impl Add for g::U {
+            type Output = g::U;
         
             fn add(self, rhs: Self) -> Self::Output {
-                gen::U(self.0 + rhs.0)
+                g::U(self.0 + rhs.0)
             }
         }
         
@@ -439,8 +439,8 @@ mod path_case_06 {
         fn show(&self) -> String;
     }
 
-    #[trait_gen(gen::par -> Name, Value)]
-    impl Show for gen::par<'_> {
+    #[trait_gen(g::par -> Name, Value)]
+    impl Show for g::par<'_> {
         fn show(&self) -> String {
             self.0.to_string()
         }
