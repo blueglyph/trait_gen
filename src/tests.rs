@@ -134,7 +134,7 @@ fn parse_args() {
             }
             Err(e) => {
                 if !parse_error {
-                    println!("{report}parse error:\n{e}");
+                    println!("{report}parse error (Subst):\n{e}");
                 } else {
                     new_error = false;
                 }
@@ -143,9 +143,11 @@ fn parse_args() {
         if !new_error {
             // tests AttrParams::parse
             new_error = true;
-            let pstring = format!("({string})");
-            let stream = tokenstream!(&pstring, error);
-            match try_parse::<AttrParams>(stream, &pstring) {
+            // syn v2 doesn't include parentheses any more, removed that part:
+            // let pstring = format!("({string})");
+            // let stream = tokenstream!(&pstring, error);
+            let stream = tokenstream!(&string, error);
+            match try_parse::<AttrParams>(stream, &string) {
                 Ok(params) => {
                     match () {
                         _ if parse_error =>
@@ -159,7 +161,7 @@ fn parse_args() {
                 }
                 Err(e) => {
                     if !parse_error {
-                        println!("{report}parse error:\n{e}");
+                        println!("{report}parse error (AttrParams):\n{e}");
                     } else {
                         new_error = false;
                     }

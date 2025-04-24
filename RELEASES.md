@@ -1,3 +1,7 @@
+# 1.0.0 (2025-04-24)
+
+- update syn lib to 2.0.100 and fix the [breaking changes](https://github.com/dtolnay/syn/releases/tag/2.0.0) (hopefully)
+
 # 0.3.2 (2023-06-23)
 
 - update documentation

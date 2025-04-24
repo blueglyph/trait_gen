@@ -168,13 +168,14 @@ mod tests;
 
 use proc_macro::TokenStream;
 use std::fmt::{Display, Formatter};
+use proc_macro2::Span;
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parenthesized, parse2, Error, bracketed};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parse2, Error, bracketed, MetaList};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::token::Colon2;
+use syn::token::PathSep;
 use syn::visit_mut::VisitMut;
 
 const VERBOSE: bool = false;
@@ -341,24 +342,26 @@ fn replace_str(string: &str, pat: &str, repl: &str) -> Option<String> {
 
 impl VisitMut for Subst {
     fn visit_attribute_mut(&mut self, node: &mut Attribute) {
-        if let Some(PathSegment { ident, .. }) = node.path.segments.first() {
+        if let Some(PathSegment { ident, .. }) = node.path().segments.first() {
             match ident.to_string().as_str() {
                 "doc" => {
+                    let syn::Meta::NameValue(syn::MetaNameValue { value: Expr::Lit(ExprLit { ref mut lit, .. }), .. }) = node.meta else { panic!() };
                     if let Some(ts_str) = replace_str(
-                        &node.tokens.to_string(),
+                        &lit.to_token_stream().to_string(),
                         &format!("${{{}}}", pathname(&self.generic_arg)),
                         &pathname(self.new_types.first().unwrap()))
                     {
-                        let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing attribute failed: {}", ts_str));
-                        node.tokens = new_ts;
+                        let new = Lit::Str(LitStr::new(ts_str.as_str(), Span::call_site()));
+                        *lit = new;
                     }
                     return
                 }
                 "trait_gen" => {
-                    if VERBOSE { println!("#trait_gen: '{}' in {}", pathname(&self.generic_arg), pathname(&node.tokens)); }
-                    let new_args = process_attr_args(self, node.tokens.clone());
+                    let syn::Meta::List(MetaList { ref mut tokens, .. }) = node.meta else { panic!() };
+                    if VERBOSE { println!("#trait_gen: '{}' in {}", pathname(&self.generic_arg), pathname(&tokens)); }
+                    let new_args = process_attr_args(self, tokens.clone());
                     if VERBOSE { println!("=> #trait_gen: {}", pathname(&new_args)); }
-                    node.tokens = new_args;
+                    *tokens = new_args;
                     return
                 }
                 _ => ()
@@ -374,7 +377,7 @@ impl VisitMut for Subst {
             Expr::Call(_) => enabled = true,
             Expr::Cast(_) => enabled = true,
             Expr::Struct(_) => enabled = true,
-            Expr::Type(_) => enabled = true,
+            // Expr::Type(_) => enabled = true, // has been deleted in syn v2
 
             // 'ExprPath' is the node checking for authorization through ExprPath.path,
             // so the current 'enabled' is preserved: (see also visit_path_mut())
@@ -555,8 +558,10 @@ fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_
                 first = false;
             }
 
+            // syn v2 doesn't include parentheses any more, removed that part:
             // puts the parentheses back and returns the modified token stream
-            proc_macro2::Group::new(proc_macro2::Delimiter::Parenthesis, output).into_token_stream()
+            //proc_macro2::Group::new(proc_macro2::Delimiter::Parenthesis, output).into_token_stream()
+            output
         }
         Err(err) => {
             err.to_compile_error()
@@ -611,9 +616,11 @@ fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, 
 /// Attribute parser used for inner attributes
 impl Parse for AttrParams {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let content;
-        parenthesized!(content in input);
-        let (current_type, types, legacy, _) = parse_parameters(&content.into())?;
+        // syn v2 doesn't include parentheses any more, removed that part:
+        // let content;
+        // parenthesized!(content in input);
+        // let (current_type, types, legacy, _) = parse_parameters(&content.into())?;
+        let (current_type, types, legacy, _) = parse_parameters(&input)?;
         Ok(AttrParams { generic_arg: current_type, new_types: types, legacy })
     }
 }
@@ -659,7 +666,7 @@ impl VisitMut for TurboFish {
         }
         for segment in &mut node.segments {
             if let PathArguments::AngleBracketed(generic_args) = &mut segment.arguments {
-                generic_args.colon2_token = Some(Colon2::default());
+                generic_args.colon2_token = Some(PathSep::default());
             }
         }
     }
