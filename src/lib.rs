@@ -167,11 +167,12 @@
 mod tests;
 
 use proc_macro::TokenStream;
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use proc_macro2::Span;
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parse2, Error, bracketed, MetaList};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parse2, Error, bracketed, MetaList, parse_quote, token};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -184,7 +185,7 @@ const VERBOSE_TF: bool = false;
 //==============================================================================
 // Main substitution types and their trait implementations
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 /// Substitution item, either a Path (`super::Type`) or a Type (`&mut Type`)
 enum SubstType {
     Path(Path),
@@ -229,6 +230,14 @@ struct AttrParams {
     legacy: bool,
 }
 
+#[derive(Debug)]
+struct CondParams {
+    /// generic argument to replace
+    generic_arg: String,
+    /// types that replace the generic argument
+    types: HashSet<String>,
+}
+
 impl Subst {
     fn can_subst_path(&self) -> bool {
         *self.can_subst_path.last().unwrap_or(&true)
@@ -237,7 +246,7 @@ impl Subst {
 
 impl Display for Subst {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PathTypes {{\n  current_types: {}\n  new_types: {}\n  current_defined: {}\n  enabled:  {}\n}}",
+        write!(f, "PathTypes {{\n  current_type: {}\n  new_types: {}\n  current_defined: {}\n  enabled:  {}\n}}",
                pathname(&self.generic_arg),
                self.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
                self.legacy.to_string(),
@@ -355,6 +364,41 @@ impl VisitMut for Subst {
                         *lit = new;
                     }
                     return
+                }
+                "trait_gen_if" => {
+                    // Instead of removing the code attached to the attribute, which would require visiting all alternatives of
+                    // Item, ImplItem, TraitItem, and ForeignItem (and update the macro whenever a new enum alternative is added),
+                    // we replace the conditional attribute with
+                    // - one that is ignored when the condition is true:            #[cfg(all())]
+                    // - one that prevents compilation when the condition is false: #[cfg(any())]
+                    // Note that #[cfg(all())] doesn't invalidate other cfg attributes that may have been placed before or after
+                    // this conditional attribute: thankfully, these conditions stack.
+                    let syn::Meta::List(MetaList { ref tokens, .. }) = node.meta else { panic!() };
+                    let condition = tokens.to_token_stream().to_string();
+                    if VERBOSE { print!("- IF: {condition}, subst = {self}"); }
+                    match parse2::<CondParams>(tokens.clone()) {
+                        Ok(attr) => {
+                                if pathname(&self.generic_arg) == attr.generic_arg {
+                                    *node = if attr.types.contains(&pathname(&self.new_types.first().unwrap())) {
+                                        if VERBOSE { println!(" => YES"); }
+                                        parse_quote!(#[cfg(all())])
+                                    } else {
+                                        if VERBOSE { println!(" => no: {:?} doesn't include {:?}", attr.types, pathname(&self.new_types.first().unwrap())); }
+                                        parse_quote!(#[cfg(any())])
+                                    }
+                                } else {
+                                    if VERBOSE { println!(); }
+                                }
+                            }
+                        Err(err) => {
+                            abort!(node.meta.span(),
+                                {err};
+                                help = "The condition format is: T in <type1>, <type2>, ..."
+                            );
+
+                        }
+                    };
+                    return;
                 }
                 "trait_gen" => {
                     let syn::Meta::List(MetaList { ref mut tokens, .. }) = node.meta else { panic!() };
@@ -573,7 +617,7 @@ fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_
 ///
 /// There are three syntaxes:
 /// - `T -> Type1, Type2, Type3`
-/// - `T in [Type1, Type2, Type3]` (when "in_format" feature is enabled)
+/// - `T in [Type1, Type2, Type3]` or `T in Type1, Type2, Type3`  (when "in_format_allowed" is true)
 /// - `Type1, Type2, Type3` (legacy format)
 ///
 /// Returns (path, types, legacy), where
@@ -584,22 +628,28 @@ fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_
 ///
 /// Note: we don't include `Type1` in `types` for the legacy format because the original stream will be copied
 /// in the generated code, so only the remaining types are requires for the substitutions.
-fn parse_parameters(input: ParseStream) -> syn::parse::Result<(Path, Vec<Type>, bool, bool)> {
+fn parse_parameters(input: ParseStream, in_format_allowed: bool) -> syn::parse::Result<(Path, Vec<Type>, bool, bool)> {
     let current_type = input.parse::<Path>()?;
     let types: Vec<Type>;
     let arrow_format = input.peek(Token![->]);                  // "T -> Type1, Type2, Type3"
-    let in_format = !arrow_format && input.peek(Token![in]);    // "T in [Type1, Type2, Type3]"
+    let in_format = !arrow_format && input.peek(Token![in]);    // "T in [Type1, Type2, Type3]" or "T in Type1, Type2, Type3"
     let legacy = !arrow_format && !in_format;                   // "Type1, Type2, Type3"
     if legacy {
         input.parse::<Token![,]>()?;
         let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
         types = vars.into_iter().collect();
     } else {
-        let vars = if cfg!(feature = "in_format") && in_format {
+        let vars = if in_format_allowed & in_format {
             input.parse::<Token![in]>()?;
-            let content;
-            bracketed!(content in input);
-            Punctuated::<Type, Token![,]>::parse_terminated(&content.into())?
+            // brackets are optional:
+            let types: ParseStream = if input.peek(token::Bracket) {
+                let content;
+                bracketed!(content in input);
+                &content.into()
+            } else {
+                input
+            };
+            Punctuated::<Type, Token![,]>::parse_terminated(&types)?
         } else {
             // removes the "->" and parses the arguments
             input.parse::<Token![->]>()?;
@@ -620,33 +670,52 @@ impl Parse for AttrParams {
         // let content;
         // parenthesized!(content in input);
         // let (current_type, types, legacy, _) = parse_parameters(&content.into())?;
-        let (current_type, types, legacy, _) = parse_parameters(&input)?;
+        let (current_type, types, legacy, _) = parse_parameters(&input, cfg!(feature = "in_format"))?;
         Ok(AttrParams { generic_arg: current_type, new_types: types, legacy })
+    }
+}
+
+fn to_subst_types(mut types: Vec<Type>) -> (bool, Vec<SubstType>) {
+    let mut visitor = TurboFish;
+    for ty in types.iter_mut() {
+        visitor.visit_type_mut(ty);
+    }
+    let is_path = types.iter().all(|ty| matches!(ty, Type::Path(_)));
+    let subst_types = types.into_iter()
+        .map(|ty|
+            if is_path {
+                if let Type::Path(p) = ty {
+                    SubstType::Path(p.path)
+                } else {
+                    panic!("this should match Type::Path: {:?}", ty)
+                }
+            } else {
+                SubstType::Type(ty)
+            })
+        .collect::<Vec<_>>();
+    (is_path, subst_types)
+}
+
+impl Parse for CondParams {
+    fn parse(input: ParseStream) -> syn::parse::Result<Self> {
+        let (current_type, types, legacy, in_format) = parse_parameters(input, true)?;
+        if !in_format || legacy {
+            return Err(input.error("wrong trait_gen_if syntax"));
+        }
+        let (_is_path, new_types) = to_subst_types(types);
+        Ok(CondParams {
+            generic_arg: pathname(&current_type),
+            types: new_types.into_iter().map(|t| pathname(&t)).collect()
+        })
     }
 }
 
 /// Attribute argument parser used for the procedural macro being processed
 impl Parse for Subst {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (current_type, mut types, legacy, in_format) = parse_parameters(input)?;
-        let mut visitor = TurboFish;
-        for ty in types.iter_mut() {
-            visitor.visit_type_mut(ty);
-        }
-        let is_path = types.iter().all(|ty| matches!(ty, Type::Path(_)));
-        let new_types = types.into_iter()
-            .map(|ty|
-                if is_path {
-                    if let Type::Path(p) = ty {
-                        SubstType::Path(p.path)
-                    } else {
-                        panic!("this should match Type::Path: {:?}", ty)
-                    }
-                } else {
-                    SubstType::Type(ty)
-                })
-            .collect::<Vec<_>>();
-        Ok(Subst { generic_arg: current_type, new_types: new_types, legacy, in_format, is_path, can_subst_path: Vec::new() })
+        let (current_type, types, legacy, in_format) = parse_parameters(input, cfg!(feature = "in_format"))?;
+        let (is_path, new_types) = to_subst_types(types);
+        Ok(Subst { generic_arg: current_type, new_types, legacy, in_format, is_path, can_subst_path: Vec::new() })
     }
 }
 

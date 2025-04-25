@@ -660,6 +660,60 @@ mod cross_product {
     }
 }
 
+mod impl_cond {
+    use trait_gen::trait_gen;
+
+    trait Binary {
+        const MSB: u32;
+        const IS_REF: bool;
+        fn msb(self) -> u32;
+        fn is_ref(self) -> bool;
+    }
+
+    #[trait_gen(T -> u8, u16, u32)]
+    #[trait_gen(U -> T, &T)]
+    impl Binary for U {
+        #[trait_gen_if(U in [u8, &u8])]
+        const MSB: u32 = 7;
+        #[trait_gen_if(U in u16, &u16)]
+        const MSB: u32 = 15;
+        #[trait_gen_if(U in u32, &u32)]
+        const MSB: u32 = 31;
+        #[trait_gen_if(U in u64, &u64)]
+        const MSB: u32 = 63;
+        #[trait_gen_if(U in u128, &u128)]
+        const MSB: u32 = 127;
+
+        #[trait_gen_if(U in u8, u16, u32)]
+        const IS_REF: bool = false;
+        #[trait_gen_if(U in &u8, &u16, &u32)]
+        const IS_REF: bool = true;
+
+        fn msb(self) -> u32 {
+            Self::MSB
+        }
+
+        /// Is ${U} a reference?
+        fn is_ref(self) -> bool {
+            Self::IS_REF
+        }
+    }
+
+    #[test]
+    fn test_msb() {
+        let tests = vec![
+            (1_u8.msb(),        7,      1_u8.is_ref(),      false),
+            ((&1_u8).msb(),     7,      (&1_u8).is_ref(),   true),
+            (1_u16.msb(),       15,     1_u16.is_ref(),     false),
+            ((&1_u32).msb(),    31,     (&1_u32).is_ref(),  true),
+        ];
+        for (index, (result_msb, expected_msb, result_is_ref, expected_is_ref)) in tests.into_iter().enumerate() {
+            assert_eq!(result_msb, expected_msb, "test {index} failed on msb");
+            assert_eq!(result_is_ref, expected_is_ref, "test {index} failed on is_ref");
+        }
+    }
+}
+
 mod ex01a {
     use std::ops::Add;
     use trait_gen::trait_gen;
