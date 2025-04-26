@@ -1,3 +1,9 @@
+# 1.1.0 (2025-04-26)
+
+- add 'trait_gen_if' conditional code inclusion
+- add 'type_gen' and 'type_gen_if' synonyms, since the attribute isn't limited to trait implementations
+- update documentation
+
 # 1.0.0 (2025-04-24)
 
 - update syn lib to 2.0.100 and fix the [breaking changes](https://github.com/dtolnay/syn/releases/tag/2.0.0) (hopefully)

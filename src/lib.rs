@@ -4,9 +4,12 @@
 
 //! # The trait_gen library
 //!
-//! This library provides an attribute macro to generate the trait implementations for several
+//! This library provides an attribute macro to generate the implementations for several
 //! types without needing custom declarative macros, code repetition, or blanket implementations.
 //! It makes the code easier to read and to maintain.
+//!
+//! It was first intended at trait implementation, hence the name of the crate, but it can also
+//! be used on generic type implementations; there are some examples in the [integration tests](https://github.com/blueglyph/trait_gen/blob/v1.1.0/tests/integration.rs).
 //!
 //! Here is a short example:
 //!
@@ -72,10 +75,69 @@
 //! too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers
 //! are preferred._
 //! - _Two or more attributes can be chained to generate all the combinations._
-//! - _`trait_gen` can be used on type implementations too._
+//! - _`trait_gen` isn't restricted to trait implementations: it can be used on type implementations too._
+//! - _`type_gen` is a synonym attribute that can be used instead of `trait_gen` when the `type_gen` feature
+//!   is enabled (it requires `use trait_gen::type_gen`)_.
 //!
-//! For more examples, look at the [README.md](https://github.com/blueglyph/trait_gen/blob/v0.2.0/README.md)
-//! or the crate [integration tests](https://github.com/blueglyph/trait_gen/blob/v0.2.0/tests/integration.rs).
+//! For more examples, look at the [README.md](https://github.com/blueglyph/trait_gen/blob/v1.1.0/README.md)
+//! or the crate [integration tests](https://github.com/blueglyph/trait_gen/blob/v1.1.0/tests/integration.rs).
+//!
+//! ## Conditional Code
+//!
+//! The use of conditional inclusion of code offers more flexibility in the implementation. Within a trait-gen
+//! implementation, the pseudo-attribute `#[trait_gen_if(T in Type1, Type2, Type3]` disables the attached
+//! code if `T` isn't in the list of types.
+//!
+//! Here is an example:
+//!
+//! ```rust
+//! # use trait_gen::trait_gen;
+//!
+//! trait Binary {
+//!     const DECIMAL_DIGITS: usize;
+//!     const SIGN: bool = false;
+//!     fn display_length() -> usize;
+//!     fn try_neg(self) -> Option<Self> where Self: Sized { None }
+//! }
+//!
+//! #[trait_gen(T -> i8, u8, i32, u32)]
+//! impl Binary for T {
+//!     #[trait_gen_if(T in i8, u8)]
+//!     const DECIMAL_DIGITS: usize = 3;
+//!     #[trait_gen_if(T in i32, u32)]
+//!     const DECIMAL_DIGITS: usize = 10;
+//!     #[trait_gen_if(T in i8, i32)]
+//!     const SIGN: bool = true;
+//!
+//!     fn display_length() -> usize {
+//!         Self::DECIMAL_DIGITS + if T::SIGN { 1 } else { 0 }
+//!     }
+//!
+//!     #[trait_gen_if(T in i8, i32)]
+//!     fn try_neg(self) -> Option<Self> {
+//!         Some(-self)
+//!     }
+//! }
+//! ```
+//!
+//! We said it was a _pseudo_ attribute because it's removed by trait-gen when it generates the final
+//! code that will be seen by the compiler. So `trait_gen_if` mustn't be declared.
+//!
+//! We've seen earlier that `type_gen` was a synonym of `trait_gen`. For the sake of coherency, a
+//! `type_gen_if` is also provided as a synonym of `trait_gen_if`.
+//! Both `type_gen` and `type_gen_if` require the `type_gen` feature.
+//!
+//! ### Remarks about the generated code and the use of `#[cfg(...)]`
+//!
+//! In order to keep the implemention this conditional pseudo-attribute reasonably simple in this
+//! crate, the code disabled by `trait_gen_if` isn't removed when trait-gen generates the final
+//! code; instead, it's prefixed by the `#[cfg(any())]` attribute, which disables it. The code
+//! that isn't disabled is prefixed by the `#[cfg(all())]` attribute, which is neutral. In fact,
+//! trait-gen simply replaces the pseudo attribute by one of those.
+//!
+//! The `#[cfg(all())]` is neutral because it doesn't overwrite any other `cfg` attribute that
+//! may target the same piece of code. If you need to attach a `#[cfg(...)]` to the same code as
+//! the `trait_gen_if` attribute's, you can place either before or after; it doesn't matter.
 //!
 //! ## Legacy Format
 //!
@@ -109,7 +171,7 @@
 //! An alternative format is also supported when the `in_format` feature is enabled:
 //!
 //! ```cargo
-//! trait-gen = { version="0.3", features=["in_format"] }
+//! trait-gen = { version="1.1", features=["in_format"] }
 //! ```
 //!
 //! **<u>Warning</u>: This feature is temporary, and there is no guarantee that it will be maintained.**
@@ -132,6 +194,8 @@
 //!
 //! Using this format issues 'deprecated' warnings that you can turn off by adding the `#![allow(deprecated)]`
 //! directive at the top of the file or by adding `#[allow(deprecated)]` where the generated code is used.
+//!
+//! The square brackets are optional since version 1.1: `#[trait_gen(T in u8, u16)]` is valid.
 //!
 //! ## Limitations
 //!
@@ -179,8 +243,27 @@ use syn::spanned::Spanned;
 use syn::token::PathSep;
 use syn::visit_mut::VisitMut;
 
+// For verbose debugging
 const VERBOSE: bool = false;
 const VERBOSE_TF: bool = false;
+
+//==============================================================================
+// Attributes that may be inside the content scanned by trait-gen, and which need
+// to be processed (the other attributes, either standard or from 3rd-party crates
+// are attached normally on the code generated by trait-gen).
+
+// Embedded trait-gen attributes (trait-gen will check for types / paths that must
+// be changed).
+// Note: when the feature "type_gen" is disabled, we avoid matching "type_gen" by
+//       making both constants equal (those constants are used in a match statement).
+const TRAIT_GEN: &str = "trait_gen";
+const TYPE_GEN: &str = if cfg!(feature = "type_gen") { "type_gen" } else { TRAIT_GEN_IF };
+
+// Attributes for conditional implementation.
+// Note: when the feature "type_gen" is disabled, we avoid matching "type_gen_if" by
+//       making both constants equal (those constants are used in a match statement).
+const TRAIT_GEN_IF: &str = "trait_gen_if";
+const TYPE_GEN_IF: &str = if cfg!(feature = "type_gen") { "type_gen_if" } else { TRAIT_GEN_IF };
 
 //==============================================================================
 // Main substitution types and their trait implementations
@@ -220,7 +303,7 @@ struct Subst {
 }
 
 #[derive(Debug)]
-/// Attribute data used to substitute arguments in inner `trait_gen` attributes
+/// Attribute data used to substitute arguments in inner `trait_gen`/`type_gen` attributes
 struct AttrParams {
     /// generic argument to replace
     generic_arg: Path,
@@ -231,10 +314,12 @@ struct AttrParams {
 }
 
 #[derive(Debug)]
+/// Attribute data used in `trait_gen_if`/`type_gen_if` conditionals. We store the generic
+/// argument and the types as [String], to make the comparison easier.
 struct CondParams {
-    /// generic argument to replace
+    /// generic argument
     generic_arg: String,
-    /// types that replace the generic argument
+    /// if the argument matches at least one of those types, the attached code is enabled
     types: HashSet<String>,
 }
 
@@ -352,8 +437,10 @@ fn replace_str(string: &str, pat: &str, repl: &str) -> Option<String> {
 impl VisitMut for Subst {
     fn visit_attribute_mut(&mut self, node: &mut Attribute) {
         if let Some(PathSegment { ident, .. }) = node.path().segments.first() {
+            #[allow(unreachable_patterns)]
             match ident.to_string().as_str() {
                 "doc" => {
+                    // substitutes "${T}" for its corresponding type in the current generated instance
                     let syn::Meta::NameValue(syn::MetaNameValue { value: Expr::Lit(ExprLit { ref mut lit, .. }), .. }) = node.meta else { panic!() };
                     if let Some(ts_str) = replace_str(
                         &lit.to_token_stream().to_string(),
@@ -365,7 +452,8 @@ impl VisitMut for Subst {
                     }
                     return
                 }
-                "trait_gen_if" => {
+                // conditional pseudo-attribute (TYPE_GEN_IF equals TRAIT_GEN_IF when the type_gen feature is disabled)
+                TRAIT_GEN_IF | TYPE_GEN_IF => {
                     // Instead of removing the code attached to the attribute, which would require visiting all alternatives of
                     // Item, ImplItem, TraitItem, and ForeignItem (and update the macro whenever a new enum alternative is added),
                     // we replace the conditional attribute with
@@ -374,33 +462,26 @@ impl VisitMut for Subst {
                     // Note that #[cfg(all())] doesn't invalidate other cfg attributes that may have been placed before or after
                     // this conditional attribute: thankfully, these conditions stack.
                     let syn::Meta::List(MetaList { ref tokens, .. }) = node.meta else { panic!() };
-                    let condition = tokens.to_token_stream().to_string();
-                    if VERBOSE { print!("- IF: {condition}, subst = {self}"); }
                     match parse2::<CondParams>(tokens.clone()) {
                         Ok(attr) => {
-                                if pathname(&self.generic_arg) == attr.generic_arg {
-                                    *node = if attr.types.contains(&pathname(&self.new_types.first().unwrap())) {
-                                        if VERBOSE { println!(" => YES"); }
-                                        parse_quote!(#[cfg(all())])
-                                    } else {
-                                        if VERBOSE { println!(" => no: {:?} doesn't include {:?}", attr.types, pathname(&self.new_types.first().unwrap())); }
-                                        parse_quote!(#[cfg(any())])
-                                    }
+                            if pathname(&self.generic_arg) == attr.generic_arg {
+                                *node = if attr.types.contains(&pathname(&self.new_types.first().unwrap())) {
+                                    parse_quote!(#[cfg(all())]) // enables the code
                                 } else {
-                                    if VERBOSE { println!(); }
+                                    parse_quote!(#[cfg(any())]) // disables the code
                                 }
                             }
+                        }
                         Err(err) => {
-                            abort!(node.meta.span(),
-                                {err};
+                            abort!(node.meta.span(), {err};
                                 help = "The condition format is: T in <type1>, <type2>, ..."
                             );
-
                         }
                     };
                     return;
                 }
-                "trait_gen" => {
+                // embedded trait-gen attributes
+                TRAIT_GEN | TYPE_GEN => {
                     let syn::Meta::List(MetaList { ref mut tokens, .. }) = node.meta else { panic!() };
                     if VERBOSE { println!("#trait_gen: '{}' in {}", pathname(&self.generic_arg), pathname(&tokens)); }
                     let new_args = process_attr_args(self, tokens.clone());
@@ -743,7 +824,7 @@ impl VisitMut for TurboFish {
 
 //==============================================================================
 
-/// Generates the attached trait implementation for all the types given in argument.
+/// Generates the attached implementation code for all the types given in argument.
 ///
 /// The attribute is placed before the pseudo-generic implementation code. The _generic argument_
 /// is given first, followed by a right arrow (`->`) and a list of type arguments.
@@ -769,6 +850,11 @@ impl VisitMut for TurboFish {
 /// errors. For example, `#[trait_gen(T -> u64, f64)]` cannot be applied to `let x: T = 0;`, because `0`
 /// is not a valid floating-point literal.
 ///
+/// The `#[trait_gen_if(T in Type1, Type2, Type3)` can be used to conditionally enable the attached code
+/// if `T` is included in the list of types, or to disable it when it's not included. It's not a real
+/// attribute processed by the compiler, since it's removed by `trait-gen` when it scans the code, so
+/// there's no need to include it in a `use` declaration—in fact, it's not allowed.
+///
 /// Finally, the actual type replaces any `${T}` occurrence in doc comments, macros and string literals.
 ///
 /// _Notes:_
@@ -777,6 +863,8 @@ impl VisitMut for TurboFish {
 /// are preferred._
 /// - _Two or more attributes can be chained to generate all the combinations._
 /// - _`trait_gen` can be used on type implementations too._
+/// - _`type_gen` is a synonym attribute that can be used instead of `trait_gen` when the `type_gen` feature
+///   is enabled (it requires `use trait_gen::type_gen`). Similarly, `type_gen_if` can be used instead of `trait_gen_if`_.
 ///
 /// ## Examples
 ///
@@ -846,4 +934,15 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     if VERBOSE { println!("end trait_gen for {}\n{}", pathname(&types.generic_arg), "-".repeat(80)); }
     if VERBOSE { println!("{}\n{}", output, "=".repeat(80)); }
     output
+}
+
+#[cfg(feature = "type_gen")]
+/// Generates the attached code for all the types given in argument.
+///
+/// This is only a synonym of the [trait_gen()] attribute (since it can be applied to other
+/// elements than trait implementations).
+#[proc_macro_attribute]
+#[proc_macro_error]
+pub fn type_gen(args: TokenStream, item: TokenStream) -> TokenStream {
+    trait_gen(args, item)
 }

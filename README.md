@@ -76,7 +76,9 @@ Finally, the actual type replaces any `${T}` occurrence in doc comments, macros,
 _Notes:_
 - _Using the letter "T" is not mandatory; any type path will do. For example, `gen::Type` is fine too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers are preferred._
 - _Two or more attributes can be chained to generate all the combinations._
-- _`trait_gen` can be used on type implementations too._
+- _`trait_gen` isn't restricted to trait implementations: it can be used on type implementations too._
+- _`type_gen` is a synonym attribute that can be used instead of `trait_gen` when the `type_gen` feature is enabled (it requires `use trait_gen::type_gen`)_.
+
 
 ## Motivation
 
@@ -126,6 +128,53 @@ impl<T: PrimInt> MyLog for T {
     }
 }
 ```
+
+## Conditional Code
+
+The use of conditional inclusion of code offers more flexibility in the implementation. Within a trait-gen
+implementation, the pseudo-attribute `#[trait_gen_if(T in Type1, Type2, Type3]` disables the attached
+code if `T` isn't in the list of types.
+
+Here is an example:
+
+```rust
+# use trait_gen::trait_gen;
+
+trait Binary {
+    const DECIMAL_DIGITS: usize;
+    const SIGN: bool = false;
+    fn display_length() -> usize;
+    fn try_neg(self) -> Option<Self> where Self: Sized { None }
+}
+
+#[trait_gen(T -> i8, u8, i32, u32)]
+impl Binary for T {
+    #[trait_gen_if(T in i8, u8)]
+    const DECIMAL_DIGITS: usize = 3;
+    #[trait_gen_if(T in i32, u32)]
+    const DECIMAL_DIGITS: usize = 10;
+    #[trait_gen_if(T in i8, i32)]
+    const SIGN: bool = true;
+
+    fn display_length() -> usize {
+        Self::DECIMAL_DIGITS + if T::SIGN { 1 } else { 0 }
+    }
+
+    #[trait_gen_if(T in i8, i32)]
+    fn try_neg(self) -> Option<Self> {
+        Some(-self)
+    }
+}
+```
+
+We said it was a _pseudo_ attribute because it's removed by trait-gen when it generates the final
+code that will be seen by the compiler. So `trait_gen_if` mustn't be declared.
+
+We've seen earlier that `type_gen` was a synonym of `trait_gen`. For the sake of coherency, a
+`type_gen_if` is also provided as a synonym of `trait_gen_if`.
+Both `type_gen` and `type_gen_if` require the `type_gen` feature.
+
+_Thanks to **Daniel Vigovszky** for giving me this idea! He first implemented it, although differently, in a fork called [conditional_trait_gen](https://github.com/vigoo/conditional_trait_gen). I had pondered about some use-cases that would require such a feature in an old post but never got around to implementing it until now._
 
 ## Examples
 
@@ -359,17 +408,13 @@ impl MyLog for T {
 
 Using this format issues 'deprecated' warnings that you can turn off by adding the `#![allow(deprecated)]` directive at the top of the file or by adding `#[allow(deprecated)]` where the generated code is used.
 
+The square brackets are optional since version 1.1: `#[trait_gen(T in u8, u16)]` is valid.
+
 ## IDE Code Awareness
 
-_rust-analyzer_ supports procedural macros for code awareness, so everything should be fine for editors based on this Language Server Protocol implementation. The nightly version of rustc may be needed, but not as default. 
+_rust-analyzer_ supports procedural macros for code awareness, so everything should be fine for editors based on this Language Server Protocol implementation.
 
-For the _IntelliJ_ plugin, this is an ongoing work that can be tracked with [this issue](https://github.com/intellij-rust/intellij-rust/issues/6908). At the moment, with plugin version 0.4.190.5263-223, the IDE is behaving correctly by taking the substitutions into account, and the user can examine the expanded code in a popup. But it is still experimental and the feature [must be activated manually](https://intellij-rust.github.io/2023/03/13/changelog-190.html):
-
-> Note that attribute procedural macro expansion is disabled by default. If you want to try out, enable `org.rust.macros.proc.attr` experimental feature.
-> 
-> Call Help | Find Action (or press Ctrl+Shift+A) and search for Experimental features. In the Experimental Features dialog, start typing the feature's name or look for it in the list, then select or clear the checkbox.
-
-As a workaround, if you don't want to activate the feature, you can define an alias. For example, `type T = Type1;`, and write the implementation code for `T`. The IDE will provide the expected help for `Type1`, but not for the other argument types. Or you can use the legacy format.
+IDEs like RustRover and IntelliJ/CLion with the Rust plugin all expand procedural macros. The expansion is shown with "Show macro recursive expansion", among other actions, errors are correctly shown, all the code-awareness features work as expected, and the code disabled by the conditional attribute appears in grey.
 
 ## Limitations
 

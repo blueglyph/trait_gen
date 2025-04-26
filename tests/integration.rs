@@ -82,6 +82,107 @@ mod supported_formats {
     }
 }
 
+mod conditional_code {
+    use std::ops::Add;
+    use trait_gen::trait_gen;
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct Metre(f64);
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct Foot(f64);
+    // to do:
+    // struct QuarterPounderWithCheese(u32);
+    // struct RoyaleWithCheese(u32);
+
+    trait Metrics {
+        const TO_METRE: f64;
+        fn to_metre(&self) -> f64;
+    }
+
+    #[trait_gen(T -> Metre, Foot)]
+    impl Metrics for T {
+        #[trait_gen_if(T in Metre)]
+        const TO_METRE: f64 = 1.0;
+        #[trait_gen_if(T in Foot)]
+        const TO_METRE: f64 = 0.3048;
+
+        fn to_metre(&self) -> f64 {
+            self.0 * Self::TO_METRE
+        }
+    }
+
+    #[trait_gen(A -> Metre, Foot)]
+    #[trait_gen(B -> Metre, Foot)]
+    impl Add<B> for A {
+        type Output = A;
+
+        fn add(self, rhs: B) -> Self::Output {
+            A((self.to_metre() + rhs.to_metre())/Self::TO_METRE)
+        }
+    }
+
+    #[test]
+    fn test() {
+        let a = Metre(1.0);
+        let b = Metre(3.048);
+        let c = Foot(20.0);
+        let d = Foot(25.0);
+
+        let a_b = a + b;
+        let a_c = a + c;
+        let c_d = c + d;
+        let c_b = c + b;
+
+        assert_eq!(a_b, Metre(4.048));
+        assert_eq!(a_c, Metre(7.096));
+        assert_eq!(c_d, Foot(45.0));
+        assert_eq!(c_b, Foot(30.0))
+    }
+}
+
+mod conditional_code2 {
+    use trait_gen::trait_gen;
+
+    trait Binary {
+        const DECIMAL_DIGITS: usize;
+        const SIGN: bool = false;
+        fn display_length() -> usize;
+        fn try_neg(self) -> Option<Self> where Self: Sized { None }
+    }
+    
+    #[trait_gen(T -> i8, u8, i32, u32)]
+    impl Binary for T {
+        #[trait_gen_if(T in i8, u8)]
+        const DECIMAL_DIGITS: usize = 3;
+        #[trait_gen_if(T in i32, u32)]
+        const DECIMAL_DIGITS: usize = 10;
+        #[trait_gen_if(T in i8, i32)]
+        const SIGN: bool = true;
+     
+        fn display_length() -> usize {
+            Self::DECIMAL_DIGITS + if T::SIGN { 1 } else { 0 }
+        }
+    
+        #[trait_gen_if(T in i8, i32)]
+        fn try_neg(self) -> Option<Self> {
+            Some(-self)
+        }
+    }
+
+    #[test]
+    fn test() {
+        assert_eq!(10_i8.try_neg(), Some(-10));
+        assert_eq!(20_u8.try_neg(), None);
+        assert_eq!(30_i32.try_neg(), Some(-30));
+        assert_eq!(40_u32.try_neg(), None);
+        assert_eq!(i8::display_length(), 4);
+        assert_eq!(u8::display_length(), 3);
+        assert_eq!(i32::display_length(), 11);
+        assert_eq!(u32::display_length(), 10);
+    }
+
+}
+
 mod type_case_01 {
     use trait_gen::trait_gen;
 
@@ -670,10 +771,13 @@ mod impl_cond {
         fn is_ref(self) -> bool;
     }
 
+    // with this ordering, the #[trait_gen_if] see either
+    // - T = u8, u16, or u32
+    // - U = u8, u16, u32, &u8, &u16, or &u32
     #[trait_gen(T -> u8, u16, u32)]
     #[trait_gen(U -> T, &T)]
     impl Binary for U {
-        #[trait_gen_if(U in [u8, &u8])]
+        #[trait_gen_if(U in [u8, &u8])] // #[trait_gen_if(T in u8])] works, too
         const MSB: u32 = 7;
         #[trait_gen_if(U in u16, &u16)]
         const MSB: u32 = 15;
@@ -705,6 +809,67 @@ mod impl_cond {
             (1_u8.msb(),        7,      1_u8.is_ref(),      false),
             ((&1_u8).msb(),     7,      (&1_u8).is_ref(),   true),
             (1_u16.msb(),       15,     1_u16.is_ref(),     false),
+            ((&1_u16).msb(),    15,      (&1_u8).is_ref(),  true),
+            (1_u32.msb(),       31,     1_u32.is_ref(),     false),
+            ((&1_u32).msb(),    31,     (&1_u32).is_ref(),  true),
+        ];
+        for (index, (result_msb, expected_msb, result_is_ref, expected_is_ref)) in tests.into_iter().enumerate() {
+            assert_eq!(result_msb, expected_msb, "test {index} failed on msb");
+            assert_eq!(result_is_ref, expected_is_ref, "test {index} failed on is_ref");
+        }
+    }
+}
+
+mod impl_cond2 {
+    use trait_gen::trait_gen;
+
+    trait Binary {
+        const MSB: u32;
+        const IS_REF: bool;
+        fn msb(self) -> u32;
+        fn is_ref(self) -> bool;
+    }
+
+    // with this ordering, the #[trait_gen_if] see either
+    // - U = T or &T
+    // - T = u8, u16, or u32
+    #[trait_gen(U -> T, &T)]
+    #[trait_gen(T -> u8, u16, u32)]
+    impl Binary for U {
+        #[trait_gen_if(T in u8)]
+        const MSB: u32 = 7;
+        #[trait_gen_if(T in u16)]
+        const MSB: u32 = 15;
+        #[trait_gen_if(T in u32)]
+        const MSB: u32 = 31;
+        #[trait_gen_if(T in u64)]
+        const MSB: u32 = 63;
+        #[trait_gen_if(T in u128)]
+        const MSB: u32 = 127;
+
+        #[trait_gen_if(U in T)]
+        const IS_REF: bool = false;
+        #[trait_gen_if(U in &T)]
+        const IS_REF: bool = true;
+
+        fn msb(self) -> u32 {
+            Self::MSB
+        }
+
+        /// Is ${U} a reference?
+        fn is_ref(self) -> bool {
+            Self::IS_REF
+        }
+    }
+
+    #[test]
+    fn test_msb() {
+        let tests = vec![
+            (1_u8.msb(),        7,      1_u8.is_ref(),      false),
+            ((&1_u8).msb(),     7,      (&1_u8).is_ref(),   true),
+            (1_u16.msb(),       15,     1_u16.is_ref(),     false),
+            ((&1_u16).msb(),    15,      (&1_u8).is_ref(),  true),
+            (1_u32.msb(),       31,     1_u32.is_ref(),     false),
             ((&1_u32).msb(),    31,     (&1_u32).is_ref(),  true),
         ];
         for (index, (result_msb, expected_msb, result_is_ref, expected_is_ref)) in tests.into_iter().enumerate() {
@@ -1084,5 +1249,32 @@ mod impl_type_02 {
         assert!((Meter::<f32>::from_foot(Foot(1.0_f32)).0 - 0.29656_f32).abs() < 1e-5);
         assert!((Meter::<f64>::from_foot(Foot(1.0_f32)).0 - 0.29656_f64).abs() < 1e-5);
         assert!((Meter::<f64>::from_foot(Foot(1.0_f64)).0 - 0.29656_f64).abs() < 1e-5);
+    }
+}
+
+#[cfg(feature = "type_gen")]
+mod type_gen {
+    use trait_gen::type_gen;
+
+    struct Meter<T>(T);
+    struct Foot<T>(T);
+
+    #[type_gen(T -> f32, f64)]
+    impl Foot<T> {
+        #[type_gen_if(T in f32)]
+        const METERS_TO_FEET: T = 3.37;    // rounded for the sake of the test
+        #[type_gen_if(T in f64)]
+        const METERS_TO_FEET: T = 3.372;
+        fn from_meter(x: Meter<T>) -> Self {
+            Foot(x.0 * Self::METERS_TO_FEET)
+        }
+    }
+
+    #[test]
+    fn test() {
+        assert_eq!(Foot::<f32>::from_meter(Meter(1.0_f32)).0, 3.37_f32);
+        assert_eq!(Foot::<f64>::from_meter(Meter(1.0_f64)).0, 3.372_f64);
+        assert_eq!(Foot::<f32>::METERS_TO_FEET, 3.37_f32);
+        assert_eq!(Foot::<f64>::METERS_TO_FEET, 3.372_f64);
     }
 }
