@@ -68,7 +68,7 @@
 //! errors. For example `#[trait_gen(T -> u64, f64)]` cannot be applied to `let x: T = 0;` because `0`
 //! is not a valid floating-point literal.
 //!
-//! Finally, the actual type replaces any `${T}` occurrence in doc comments, macros, and string literals.
+//! Finally, the actual type of `T` replaces any `${T}` occurrence in doc comments, macros, and string literals.
 //!
 //! _Notes:_
 //! - _Using the letter "T" is not mandatory; any type path will do. For example, `g::Type` is fine
@@ -444,7 +444,7 @@ impl VisitMut for Subst {
                     // - one that prevents compilation when the condition is false: #[cfg(any())]
                     // Note that #[cfg(all())] doesn't invalidate other cfg attributes that may have been placed before or after
                     // this conditional attribute: thankfully, these conditions stack.
-                    if let syn::Meta::List(MetaList { ref tokens, .. }) = node.meta {
+                    if let syn::Meta::List(MetaList { ref tokens, .. }) = &mut node.meta {
                         match parse2::<CondParams>(tokens.clone()) {
                             Ok(attr) => {
                                 if pathname(&self.generic_arg) == attr.generic_arg {
@@ -456,14 +456,14 @@ impl VisitMut for Subst {
                                 }
                             }
                             Err(err) => {
-                                abort!(node.meta.span(), {err};
-                                help = "The condition format is: T in <type1>, <type2>, ..."
-                            );
+                                abort!(tokens.span(), err;
+                                    help = "The expected format is: #[{}({} in type1, type2, type3)]", ident, pathname(&self.generic_arg));
                             }
                         };
                         return;
                     } else {
-                        panic!("unexpected {ident} attribute format"); // TODO: generate a proper error
+                        abort!(node.meta.span(), "invalid {} attribute format", ident;
+                            help = "The expected format is: #[{}({} in type1, type2, type3)]", ident, pathname(&self.generic_arg));
                     }
                 }
                 // embedded trait-gen attributes
@@ -475,7 +475,8 @@ impl VisitMut for Subst {
                         *tokens = new_args;
                         return;
                     } else {
-                        panic!("unexpected {ident} attribute format"); // TODO: generate a proper error
+                        abort!(node.meta.span(), "invalid {} attribute format", ident;
+                            help = "The expected format is: #[{}({} -> type1, type2, type3)]", ident, pathname(&self.generic_arg));
                     };
                 }
                 _ => ()
@@ -697,11 +698,16 @@ fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_
 ///
 /// Note: we don't include `Type1` in `types` for the legacy format because the original stream will be copied
 /// in the generated code, so only the remaining types are requires for the substitutions.
-fn parse_parameters(input: ParseStream, in_format_allowed: bool) -> syn::parse::Result<(Path, Vec<Type>, bool, bool)> {
+fn parse_parameters(input: ParseStream, in_format_allowed: bool, in_format_enforced: bool) -> syn::parse::Result<(Path, Vec<Type>, bool, bool)> {
     let current_type = input.parse::<Path>()?;
     let types: Vec<Type>;
     let arrow_format = input.peek(Token![->]);                  // "T -> Type1, Type2, Type3"
-    let in_format = !arrow_format && input.peek(Token![in]);    // "T in [Type1, Type2, Type3]" or "T in Type1, Type2, Type3"
+    let in_format = if in_format_enforced {                     // "T in [Type1, Type2, Type3]" or "T in Type1, Type2, Type3"
+        input.parse::<Token![in]>()?;
+        true
+    } else {
+        !arrow_format && input.parse::<Token![in]>().is_ok()
+    };
     let legacy = !arrow_format && !in_format;                   // "Type1, Type2, Type3"
     if legacy {
         input.parse::<Token![,]>()?;
@@ -709,7 +715,6 @@ fn parse_parameters(input: ParseStream, in_format_allowed: bool) -> syn::parse::
         types = vars.into_iter().collect();
     } else {
         let vars = if in_format_allowed & in_format {
-            input.parse::<Token![in]>()?;
             // brackets are optional:
             if input.peek(token::Bracket) {
                 let content;
@@ -735,7 +740,7 @@ fn parse_parameters(input: ParseStream, in_format_allowed: bool) -> syn::parse::
 /// Attribute parser used for inner attributes
 impl Parse for AttrParams {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let (current_type, types, legacy, _) = parse_parameters(&input, cfg!(feature = "in_format"))?;
+        let (current_type, types, legacy, _) = parse_parameters(&input, cfg!(feature = "in_format"), false)?;
         Ok(AttrParams { generic_arg: current_type, new_types: types, legacy })
     }
 }
@@ -763,7 +768,7 @@ fn to_subst_types(mut types: Vec<Type>) -> (bool, Vec<SubstType>) {
 
 impl Parse for CondParams {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (current_type, types, legacy, in_format) = parse_parameters(input, true)?;
+        let (current_type, types, legacy, in_format) = parse_parameters(input, true, true)?;
         if !in_format || legacy {
             return Err(input.error("wrong trait_gen_if syntax"));
         }
@@ -778,7 +783,7 @@ impl Parse for CondParams {
 /// Attribute argument parser used for the procedural macro being processed
 impl Parse for Subst {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (current_type, types, legacy, in_format) = parse_parameters(input, cfg!(feature = "in_format"))?;
+        let (current_type, types, legacy, in_format) = parse_parameters(input, cfg!(feature = "in_format"), false)?;
         let (is_path, new_types) = to_subst_types(types);
         Ok(Subst { generic_arg: current_type, new_types, legacy, in_format, is_path, can_subst_path: Vec::new() })
     }

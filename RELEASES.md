@@ -1,3 +1,10 @@
+# 1.1.1 (2025-04-??)
+
+- fix and simplify doc comment processing
+- improve some error messages
+- update the minimum stable Rust version to 1.61.0 to comply with syn v2.0.100
+- update documentation
+
 # 1.1.0 (2025-04-26)
 
 - add 'trait_gen_if' conditional code inclusion

@@ -325,7 +325,7 @@ assert_eq!(2_u64.text(), "u64: 2");
     // ...
     ```
 
-_Note: there is no escape code to avoid the substitution; if you need `${T}` for another purpose and you don't want it to be replaced, you have to choose another generic argument; for example, `U` or `my::T`._ 
+_Note: there is no escape code to avoid the substitution; if you need `${T}` for another purpose and you don't want it to be replaced, you must use `concat!` in a doc attribute to split the pattern; for example `#[doc = concat!("my ${", "T} variable")]`. Or you must choose another generic argument; for example, `U` or `my::T`._ 
 
 ## Legacy Format
 
