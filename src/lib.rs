@@ -233,7 +233,6 @@ mod tests;
 use proc_macro::TokenStream;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
-use proc_macro2::Span;
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
 use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parse2, Error, bracketed, MetaList, parse_quote, token};
@@ -433,21 +432,9 @@ fn replace_str(string: &str, pat: &str, repl: &str) -> Option<String> {
 impl VisitMut for Subst {
     fn visit_attribute_mut(&mut self, node: &mut Attribute) {
         if let Some(PathSegment { ident, .. }) = node.path().segments.first() {
+            let ident = ident.to_string();
             #[allow(unreachable_patterns)]
-            match ident.to_string().as_str() {
-                "doc" => {
-                    // substitutes "${T}" for its corresponding type in the current generated instance
-                    let syn::Meta::NameValue(syn::MetaNameValue { value: Expr::Lit(ExprLit { ref mut lit, .. }), .. }) = node.meta else { panic!() };
-                    if let Some(ts_str) = replace_str(
-                        &lit.to_token_stream().to_string(),
-                        &format!("${{{}}}", pathname(&self.generic_arg)),
-                        &pathname(self.new_types.first().unwrap()))
-                    {
-                        let new = Lit::Str(LitStr::new(ts_str.as_str(), Span::call_site()));
-                        *lit = new;
-                    }
-                    return
-                }
+            match ident.as_str() {
                 // conditional pseudo-attribute (TYPE_GEN_IF equals TRAIT_GEN_IF when the type_gen feature is disabled)
                 TRAIT_GEN_IF | TYPE_GEN_IF => {
                     // Instead of removing the code attached to the attribute, which would require visiting all alternatives of
@@ -457,33 +444,39 @@ impl VisitMut for Subst {
                     // - one that prevents compilation when the condition is false: #[cfg(any())]
                     // Note that #[cfg(all())] doesn't invalidate other cfg attributes that may have been placed before or after
                     // this conditional attribute: thankfully, these conditions stack.
-                    let syn::Meta::List(MetaList { ref tokens, .. }) = node.meta else { panic!() };
-                    match parse2::<CondParams>(tokens.clone()) {
-                        Ok(attr) => {
-                            if pathname(&self.generic_arg) == attr.generic_arg {
-                                *node = if attr.types.contains(&pathname(&self.new_types.first().unwrap())) {
-                                    parse_quote!(#[cfg(all())]) // enables the code
-                                } else {
-                                    parse_quote!(#[cfg(any())]) // disables the code
+                    if let syn::Meta::List(MetaList { ref tokens, .. }) = node.meta {
+                        match parse2::<CondParams>(tokens.clone()) {
+                            Ok(attr) => {
+                                if pathname(&self.generic_arg) == attr.generic_arg {
+                                    *node = if attr.types.contains(&pathname(&self.new_types.first().unwrap())) {
+                                        parse_quote!(#[cfg(all())]) // enables the code
+                                    } else {
+                                        parse_quote!(#[cfg(any())]) // disables the code
+                                    }
                                 }
                             }
-                        }
-                        Err(err) => {
-                            abort!(node.meta.span(), {err};
+                            Err(err) => {
+                                abort!(node.meta.span(), {err};
                                 help = "The condition format is: T in <type1>, <type2>, ..."
                             );
-                        }
-                    };
-                    return;
+                            }
+                        };
+                        return;
+                    } else {
+                        panic!("unexpected {ident} attribute format"); // TODO: generate a proper error
+                    }
                 }
                 // embedded trait-gen attributes
                 TRAIT_GEN | TYPE_GEN => {
-                    let syn::Meta::List(MetaList { ref mut tokens, .. }) = node.meta else { panic!() };
-                    if VERBOSE { println!("#trait_gen: '{}' in {}", pathname(&self.generic_arg), pathname(&tokens)); }
-                    let new_args = process_attr_args(self, tokens.clone());
-                    if VERBOSE { println!("=> #trait_gen: {}", pathname(&new_args)); }
-                    *tokens = new_args;
-                    return
+                    if let syn::Meta::List(MetaList { ref mut tokens, .. }) = node.meta {
+                        if VERBOSE { println!("#trait_gen: '{}' in {}", pathname(&self.generic_arg), pathname(&tokens)); }
+                        let new_args = process_attr_args(self, tokens.clone());
+                        if VERBOSE { println!("=> #trait_gen: {}", pathname(&new_args)); }
+                        *tokens = new_args;
+                        return;
+                    } else {
+                        panic!("unexpected {ident} attribute format"); // TODO: generate a proper error
+                    };
                 }
                 _ => ()
             }
@@ -718,14 +711,14 @@ fn parse_parameters(input: ParseStream, in_format_allowed: bool) -> syn::parse::
         let vars = if in_format_allowed & in_format {
             input.parse::<Token![in]>()?;
             // brackets are optional:
-            let types: ParseStream = if input.peek(token::Bracket) {
+            if input.peek(token::Bracket) {
                 let content;
                 bracketed!(content in input);
-                &content.into()
+                let types: ParseStream = &content.into();
+                Punctuated::<Type, Token![,]>::parse_terminated(&types)?
             } else {
-                input
-            };
-            Punctuated::<Type, Token![,]>::parse_terminated(&types)?
+                Punctuated::<Type, Token![,]>::parse_terminated(input)?
+            }
         } else {
             // removes the "->" and parses the arguments
             input.parse::<Token![->]>()?;
