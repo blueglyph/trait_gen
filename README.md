@@ -9,6 +9,7 @@
 * [The 'trait-gen' Crate](#the-trait-gen-crate)
   * [Usage](#usage)
   * [Motivation](#motivation)
+  * [Conditional Code](#conditional-code)
   * [Examples](#examples)
   * [Legacy Format](#legacy-format)
   * [Alternative Format](#alternative-format)
@@ -178,7 +179,7 @@ _Thanks to **Daniel Vigovszky** for giving me this idea! He first implemented it
 
 ## Examples
 
-Here are a few examples of the substitutions that are supported; you'll find more in the [integration tests](https://github.com/blueglyph/trait_gen/blob/v0.2.0/tests/integration.rs) of the library. 
+Here are a few examples of the substitutions that are supported; you'll find more in the [integration tests](https://github.com/blueglyph/trait_gen/blob/v1.1.0/tests/integration.rs) of the library. 
 
 The first example is more an illustration of what is and isn't replaced than a practical implementation:
 
@@ -414,7 +415,7 @@ The square brackets are optional since version 1.1: `#[trait_gen(T in u8, u16)]`
 
 _rust-analyzer_ supports procedural macros for code awareness, so everything should be fine for editors based on this Language Server Protocol implementation.
 
-IDEs like RustRover and IntelliJ/CLion with the Rust plugin all expand procedural macros. The expansion is shown with "Show macro recursive expansion", among other actions, errors are correctly shown, all the code-awareness features work as expected, and the code disabled by the conditional attribute appears in grey.
+IDEs like RustRover and IntelliJ/CLion with the Rust plugin all "understand" procedural macros. The expansion is shown with "Show macro recursive expansion", among other actions, errors are correctly shown, all the code-awareness features seem to work as expected, and the code disabled by the conditional attribute appears in grey.
 
 ## Limitations
 

@@ -405,15 +405,11 @@ impl NodeMatch for PathSegment {
 /// Compares two type paths and, if `prefix` is a prefix of `full_path`, returns the number of
 /// matching segments.
 fn path_prefix_len(prefix: &Path, full_path: &Path) -> Option<usize> {
-    // if VERBOSE { println!("- path_prefix_len(prefix: {}, full: {})", pathname(prefix), pathname(full_path)); }
     let prefix_len = prefix.segments.len();
     if full_path.leading_colon == prefix.leading_colon && full_path.segments.len() >= prefix_len {
         for (seg_full, seg_prefix) in full_path.segments.iter().zip(&prefix.segments) {
             if !seg_full.match_prefix(seg_prefix) {
-                // if VERBOSE { print!("  - {:?} != {:?} ", pathname(seg_prefix), pathname(seg_full)); }
                 return None;
-            } else {
-                // if VERBOSE { print!("  - {:?} ~= {:?} ", pathname(seg_prefix), pathname(seg_full)); }
             }
         }
         return Some(prefix_len)
@@ -502,7 +498,6 @@ impl VisitMut for Subst {
             Expr::Call(_) => enabled = true,
             Expr::Cast(_) => enabled = true,
             Expr::Struct(_) => enabled = true,
-            // Expr::Type(_) => enabled = true, // has been deleted in syn v2
 
             // 'ExprPath' is the node checking for authorization through ExprPath.path,
             // so the current 'enabled' is preserved: (see also visit_path_mut())
@@ -747,10 +742,6 @@ fn parse_parameters(input: ParseStream, in_format_allowed: bool) -> syn::parse::
 /// Attribute parser used for inner attributes
 impl Parse for AttrParams {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        // syn v2 doesn't include parentheses any more, removed that part:
-        // let content;
-        // parenthesized!(content in input);
-        // let (current_type, types, legacy, _) = parse_parameters(&content.into())?;
         let (current_type, types, legacy, _) = parse_parameters(&input, cfg!(feature = "in_format"))?;
         Ok(AttrParams { generic_arg: current_type, new_types: types, legacy })
     }
