@@ -1,4 +1,4 @@
-# 1.1.1 (2025-04-??)
+# 1.1.1 (2025-04-27)
 
 - fix and simplify doc comment processing
 - improve some error messages

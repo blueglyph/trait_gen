@@ -456,7 +456,8 @@ impl VisitMut for Subst {
                                 }
                             }
                             Err(err) => {
-                                abort!(tokens.span(), err;
+                                let span = if tokens.is_empty() { &node.span() } else { &tokens.span() };
+                                abort!(span, err;
                                     help = "The expected format is: #[{}({} in type1, type2, type3)]", ident, pathname(&self.generic_arg));
                             }
                         };
