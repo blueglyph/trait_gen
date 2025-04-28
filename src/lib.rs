@@ -230,12 +230,12 @@
 
 mod tests;
 
-use proc_macro::TokenStream;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
+use proc_macro::TokenStream;
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, Error, bracketed, MetaList, parse_quote, token};
+use syn::{Generics, GenericParam, Token, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, Error, bracketed, MetaList, parse_quote, token};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -329,8 +329,10 @@ impl Subst {
         *self.can_subst_path.last().unwrap_or(&true)
     }
 
+    /// Gives a helpful list of type names that might be used in a substitution list.
     fn get_example_types(&self) -> String {
-        //self.new_types.iter().map(|t| pathname(t)).chain(["TypeY".to_string(), "TypeZ".to_string()]).take(3).collect::<Vec<_>>().join(", ")
+        // This is called for error messages, which happen only during the first visit_mut pass over
+        // the inner attributes: we know that Subst still has all the types in `self.new_types`.
         let mut examples = self.new_types.iter().map(|t| pathname(t)).take(3).collect::<Vec<_>>();
         while examples.len() < 3 {
             examples.push(format!("Type{}", examples.len() + 1));
@@ -466,6 +468,7 @@ impl VisitMut for Subst {
                             }
                         }
                         Err(err) => {
+                            // gives a personalized hint
                             abort!(err.span(), err;
                                 help = "The expected format is: #[{}({} in {})]", ident, pathname(&self.generic_arg), self.get_example_types());
                         }
@@ -505,6 +508,7 @@ impl VisitMut for Subst {
                             };
                         }
                         Err(err) => {
+                            // gives a personalized hint
                             abort!(err.span(), err;
                                 help = "The expected format is: #[{}({} -> {})]", ident, pathname(&self.generic_arg), self.get_example_types());
                         }
@@ -693,29 +697,29 @@ impl VisitMut for Subst {
 /// Note: we don't include `Type1` in `types` for the legacy format because the original stream will be copied
 /// in the generated code, so only the remaining types are requires for the substitutions.
 fn parse_parameters(input: ParseStream, in_format_allowed: bool, in_format_enforced: bool) -> syn::parse::Result<(Path, Vec<Type>, bool, bool)> {
-    assert!(in_format_allowed || !in_format_enforced, 
+    assert!(in_format_allowed || !in_format_enforced,
             "incompatible arguments: in_format_allowed={in_format_allowed} and in_format_enforced={in_format_enforced}");
-    
+
     // determines the format
     let current_type = input.parse::<Path>()?;
-    let in_format = if in_format_enforced {                         
+    let in_format = if in_format_enforced {
         input.parse::<Token![in]>().and(Ok(true))?              // "T in [Type1, Type2, Type3]" or "T in Type1, Type2, Type3"
     } else {
-        in_format_allowed && input.peek(Token![in]) 
+        in_format_allowed && input.peek(Token![in])
             && input.parse::<Token![in]>().is_ok()
     };
-    let legacy = !in_format && input.peek(Token![,])            // "Type1, Type2, Type3" 
+    let legacy = !in_format && input.peek(Token![,])            // "Type1, Type2, Type3"
         && input.parse::<Token![,]>().is_ok();
     if !in_format && !legacy {
         // default format suggested in case of error
-        input.parse::<Token![->]>()?;                           // "T -> Type1, Type2, Type3" 
+        input.parse::<Token![->]>()?;                           // "T -> Type1, Type2, Type3"
     }
-    
+
     // collects the other arguments depending on format
     let types: Vec<Type>;
     if legacy {
         // current_type is the first type and the one that'll be replaced; this is
-        // managed in the attribute's visit_mut code after returning from here 
+        // managed in the attribute's visit_mut code after returning from here
         let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
         types = vars.into_iter().collect();
     } else {
@@ -884,7 +888,13 @@ impl VisitMut for TurboFish {
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
-    let mut types = parse_macro_input!(args as Subst);
+    let mut types = match syn::parse::<Subst>(args) {
+        Ok(types) => types,
+        Err(err) => {
+            abort!(err.span(), err;
+                help = "The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]");
+        }
+    };
     let warning = if types.in_format {
         let message = format!(
             "Use of temporary format '{} in [{}]' in #[trait_gen] macro",
