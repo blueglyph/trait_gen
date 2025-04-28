@@ -235,12 +235,14 @@ use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, parse2, Error, bracketed, MetaList, parse_quote, token};
+use syn::{Generics, GenericParam, Token, parse_macro_input, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, Error, bracketed, MetaList, parse_quote, token};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::PathSep;
 use syn::visit_mut::VisitMut;
+#[allow(unused_imports)]
+use syn::parse2; // wrongly detected as unused
 
 // For verbose debugging
 const VERBOSE: bool = false;
@@ -325,6 +327,15 @@ struct CondParams {
 impl Subst {
     fn can_subst_path(&self) -> bool {
         *self.can_subst_path.last().unwrap_or(&true)
+    }
+
+    fn get_example_types(&self) -> String {
+        //self.new_types.iter().map(|t| pathname(t)).chain(["TypeY".to_string(), "TypeZ".to_string()]).take(3).collect::<Vec<_>>().join(", ")
+        let mut examples = self.new_types.iter().map(|t| pathname(t)).take(3).collect::<Vec<_>>();
+        while examples.len() < 3 {
+            examples.push(format!("Type{}", examples.len() + 1));
+        }
+        examples.join(", ")
     }
 }
 
@@ -435,7 +446,7 @@ impl VisitMut for Subst {
             let ident = ident.to_string();
             #[allow(unreachable_patterns)]
             match ident.as_str() {
-                // conditional pseudo-attribute (TYPE_GEN_IF equals TRAIT_GEN_IF when the type_gen feature is disabled)
+                // conditional pseudo-attribute (TYPE_GEN_IF == TRAIT_GEN_IF when type_gen is disabled)
                 TRAIT_GEN_IF | TYPE_GEN_IF => {
                     // Instead of removing the code attached to the attribute, which would require visiting all alternatives of
                     // Item, ImplItem, TraitItem, and ForeignItem (and update the macro whenever a new enum alternative is added),
@@ -444,41 +455,61 @@ impl VisitMut for Subst {
                     // - one that prevents compilation when the condition is false: #[cfg(any())]
                     // Note that #[cfg(all())] doesn't invalidate other cfg attributes that may have been placed before or after
                     // this conditional attribute: thankfully, these conditions stack.
-                    if let syn::Meta::List(MetaList { ref tokens, .. }) = &mut node.meta {
-                        match parse2::<CondParams>(tokens.clone()) {
-                            Ok(attr) => {
-                                if pathname(&self.generic_arg) == attr.generic_arg {
-                                    *node = if attr.types.contains(&pathname(&self.new_types.first().unwrap())) {
-                                        parse_quote!(#[cfg(all())]) // enables the code
-                                    } else {
-                                        parse_quote!(#[cfg(any())]) // disables the code
-                                    }
+                    match node.parse_args::<CondParams>() {
+                        Ok(attr) => {
+                            if pathname(&self.generic_arg) == attr.generic_arg {
+                                *node = if attr.types.contains(&pathname(&self.new_types.first().unwrap())) {
+                                    parse_quote!(#[cfg(all())]) // enables the code
+                                } else {
+                                    parse_quote!(#[cfg(any())]) // disables the code
                                 }
                             }
-                            Err(err) => {
-                                let span = if tokens.is_empty() { &node.span() } else { &tokens.span() };
-                                abort!(span, err;
-                                    help = "The expected format is: #[{}({} in type1, type2, type3)]", ident, pathname(&self.generic_arg));
-                            }
-                        };
-                        return;
-                    } else {
-                        abort!(node.meta.span(), "invalid {} attribute format", ident;
-                            help = "The expected format is: #[{}({} in type1, type2, type3)]", ident, pathname(&self.generic_arg));
-                    }
+                        }
+                        Err(err) => {
+                            abort!(err.span(), err;
+                                help = "The expected format is: #[{}({} in {})]", ident, pathname(&self.generic_arg), self.get_example_types());
+                        }
+                    };
+                    return;
                 }
                 // embedded trait-gen attributes
                 TRAIT_GEN | TYPE_GEN => {
-                    if let syn::Meta::List(MetaList { ref mut tokens, .. }) = node.meta {
-                        if VERBOSE { println!("#trait_gen: '{}' in {}", pathname(&self.generic_arg), pathname(&tokens)); }
-                        let new_args = process_attr_args(self, tokens.clone());
-                        if VERBOSE { println!("=> #trait_gen: {}", pathname(&new_args)); }
-                        *tokens = new_args;
-                        return;
-                    } else {
-                        abort!(node.meta.span(), "invalid {} attribute format", ident;
-                            help = "The expected format is: #[{}({} -> type1, type2, type3)]", ident, pathname(&self.generic_arg));
+                    // Perform substitutions in the arguments of the inner attribute if necessary.
+                    // #[trait_gen(U -> i32, u32)]     // <== self
+                    // #[trait_gen(T -> &U, &mut U)]   // <== change 'U' to 'i32' and 'u32'
+                    // impl Neg for T { /* .... */ }
+                    match node.parse_args::<AttrParams>() {
+                        Ok(mut types) => {
+                            let mut output = proc_macro2::TokenStream::new();
+                            if !types.legacy {
+                                let g = types.generic_arg;
+                                output.extend(quote!(#g -> ));
+                            }
+                            let mut first = true;
+                            for ty in &mut types.new_types {
+                                // checks if substitutions must be made in that argument:
+                                self.visit_type_mut(ty);
+                                if !first {
+                                    output.extend(quote!(, ));
+                                }
+                                output.extend(quote!(#ty));
+                                first = false;
+                            }
+                            if let syn::Meta::List(MetaList { ref mut tokens, .. }) = node.meta {
+                                *tokens = output;
+                                return;
+                            } else {
+                                // shouldn't happen
+                                abort!(node.meta.span(), "invalid {} attribute format", ident;
+                                    help = "The expected format is: #[{}({} -> {})]", ident, pathname(&self.generic_arg), self.get_example_types());
+                            };
+                        }
+                        Err(err) => {
+                            abort!(err.span(), err;
+                                help = "The expected format is: #[{}({} -> {})]", ident, pathname(&self.generic_arg), self.get_example_types());
+                        }
                     };
+                    
                 }
                 _ => ()
             }
@@ -646,44 +677,6 @@ impl VisitMut for Subst {
 //==============================================================================
 // Attribute argument processing
 
-/// Perform substitutions in the arguments of the inner attribute if necessary.
-///
-/// `
-/// #[trait_gen(U -> i32, u32)]     // <== we are processing this attribute
-/// #[trait_gen(T -> &U, &mut U)]   // <== change 'U' to 'i32' and 'u32'
-/// impl Neg for T { /* .... */ }
-/// `
-fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
-    match parse2::<AttrParams>(args) {
-        Ok(mut types) => {
-            let mut output = proc_macro2::TokenStream::new();
-            if !types.legacy {
-                let g = types.generic_arg;
-                output.extend(quote!(#g -> ));
-            }
-            let mut first = true;
-            for ty in &mut types.new_types {
-                if !first {
-                    output.extend(quote!(, ));
-                }
-                // checks if substitutions must be made in that argument:
-                subst.visit_type_mut(ty);
-
-                output.extend(quote!(#ty));
-                first = false;
-            }
-
-            // syn v2 doesn't include parentheses any more, removed that part:
-            // puts the parentheses back and returns the modified token stream
-            //proc_macro2::Group::new(proc_macro2::Delimiter::Parenthesis, output).into_token_stream()
-            output
-        }
-        Err(err) => {
-            err.to_compile_error()
-        }
-    }
-}
-
 /// Parses the attribute arguments, and extracts the generic argument and the types that must substitute it.
 ///
 /// There are three syntaxes:
@@ -700,34 +693,43 @@ fn process_attr_args(subst: &mut Subst, args: proc_macro2::TokenStream) -> proc_
 /// Note: we don't include `Type1` in `types` for the legacy format because the original stream will be copied
 /// in the generated code, so only the remaining types are requires for the substitutions.
 fn parse_parameters(input: ParseStream, in_format_allowed: bool, in_format_enforced: bool) -> syn::parse::Result<(Path, Vec<Type>, bool, bool)> {
+    assert!(in_format_allowed || !in_format_enforced, 
+            "incompatible arguments: in_format_allowed={in_format_allowed} and in_format_enforced={in_format_enforced}");
+    
+    // determines the format
     let current_type = input.parse::<Path>()?;
-    let types: Vec<Type>;
-    let arrow_format = input.peek(Token![->]);                  // "T -> Type1, Type2, Type3"
-    let in_format = if in_format_enforced {                     // "T in [Type1, Type2, Type3]" or "T in Type1, Type2, Type3"
-        input.parse::<Token![in]>()?;
-        true
+    let in_format = if in_format_enforced {                         
+        input.parse::<Token![in]>().and(Ok(true))?              // "T in [Type1, Type2, Type3]" or "T in Type1, Type2, Type3"
     } else {
-        !arrow_format && input.parse::<Token![in]>().is_ok()
+        in_format_allowed && input.peek(Token![in]) 
+            && input.parse::<Token![in]>().is_ok()
     };
-    let legacy = !arrow_format && !in_format;                   // "Type1, Type2, Type3"
+    let legacy = !in_format && input.peek(Token![,])            // "Type1, Type2, Type3" 
+        && input.parse::<Token![,]>().is_ok();
+    if !in_format && !legacy {
+        // default format suggested in case of error
+        input.parse::<Token![->]>()?;                           // "T -> Type1, Type2, Type3" 
+    }
+    
+    // collects the other arguments depending on format
+    let types: Vec<Type>;
     if legacy {
-        input.parse::<Token![,]>()?;
+        // current_type is the first type and the one that'll be replaced; this is
+        // managed in the attribute's visit_mut code after returning from here 
         let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
         types = vars.into_iter().collect();
     } else {
-        let vars = if in_format_allowed & in_format {
+        let vars = if in_format {
             // brackets are optional:
             if input.peek(token::Bracket) {
                 let content;
                 bracketed!(content in input);
-                let types: ParseStream = &content.into();
-                Punctuated::<Type, Token![,]>::parse_terminated(&types)?
+                let inner_vars: ParseStream = &content.into();
+                Punctuated::<Type, Token![,]>::parse_terminated(&inner_vars)?
             } else {
                 Punctuated::<Type, Token![,]>::parse_terminated(input)?
             }
         } else {
-            // removes the "->" and parses the arguments
-            input.parse::<Token![->]>()?;
             Punctuated::<Type, Token![,]>::parse_terminated(input)?
         };
         types = vars.into_iter().collect();
@@ -767,6 +769,7 @@ fn to_subst_types(mut types: Vec<Type>) -> (bool, Vec<SubstType>) {
     (is_path, subst_types)
 }
 
+/// Attribute argument parser used for the inner conditional attributes
 impl Parse for CondParams {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
         let (current_type, types, legacy, in_format) = parse_parameters(input, true, true)?;
