@@ -24,7 +24,7 @@ type_gen = []
 [dependencies]
 quote = "1.0.40"
 proc-macro2 = { version = "1.0.95", features = ["span-locations"] }
-syn = { version = "2.0.100", features = ["full", "visit-mut", "extra-traits"] }
+syn = { version = "2.0.101", features = ["full", "visit-mut", "extra-traits"] }
 proc-macro-error = "1.0.4"
 
 [dev-dependencies]
