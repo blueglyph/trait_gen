@@ -285,6 +285,24 @@ impl ToTokens for SubstType {
     }
 }
 
+#[derive(Debug, PartialEq)]
+/// Attribute format used in the original source code.
+enum AttributeFormat {
+    Arrow,      // #[trait_gen(T -> T1, T2, T3)]    impl Trait for T {...}
+    Legacy,     // #[trait_gen(T1, T2, T3)]         impl Trait for T1 {...}
+    In          // #[trait_gen(T in [T1, T2, T3])]  impl Trait for T {...}
+}
+
+impl AttributeFormat {
+    fn is_legacy(&self) -> bool {
+        self == &AttributeFormat::Legacy
+    }
+
+    fn is_in(&self) -> bool {
+        self == &AttributeFormat::In
+    }
+}
+
 #[derive(Debug)]
 /// Attribute substitution data used to replace the generic argument in `generic_arg` with the
 /// types in `new_types`.
@@ -293,10 +311,8 @@ struct Subst {
     generic_arg: Path,
     /// types that replace the generic argument
     new_types: Vec<SubstType>,
-    /// legacy format if true
-    legacy: bool,
-    /// format `T in [...]` if true
-    in_format: bool,
+    /// format
+    format: AttributeFormat,
     /// Path substitution items if true, Type items if false
     is_path: bool,
     /// Context stack, cannot substitue paths when last is false (can substitute if empty)
@@ -310,8 +326,8 @@ struct AttrParams {
     generic_arg: Path,
     /// types that replace the generic argument
     new_types: Vec<Type>,
-    /// legacy format if true
-    legacy: bool,
+    /// format
+    format: AttributeFormat,
 }
 
 #[derive(Debug)]
@@ -343,10 +359,10 @@ impl Subst {
 
 impl Display for Subst {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PathTypes {{\n  current_type: {}\n  new_types: {}\n  current_defined: {}\n  enabled:  {}\n}}",
+        write!(f, "PathTypes {{\n  current_type: {}\n  new_types: {}\n  format: {:?}\n  enabled:  {}\n}}",
                pathname(&self.generic_arg),
                self.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
-               self.legacy.to_string(),
+               self.format,
                self.can_subst_path.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
         )
     }
@@ -355,6 +371,7 @@ impl Display for Subst {
 //==============================================================================
 // Helper functions and traits
 
+/// Creates a string from a tokenizable item and removes the annoying spaces.
 fn pathname<T: ToTokens>(path: &T) -> String {
     path.to_token_stream().to_string()
         .replace(" :: ", "::")
@@ -484,7 +501,9 @@ impl VisitMut for Subst {
                     match node.parse_args::<AttrParams>() {
                         Ok(mut types) => {
                             let mut output = proc_macro2::TokenStream::new();
-                            if !types.legacy {
+                            // It would be nice to give a warning if the format of the attributes were different,
+                            // once there is a way to generate custom warnings (an error for that seems too harsh).
+                            if !types.format.is_legacy() {
                                 let g = types.generic_arg;
                                 output.extend(quote!(#g -> ));
                             }
@@ -683,47 +702,41 @@ impl VisitMut for Subst {
 
 /// Parses the attribute arguments, and extracts the generic argument and the types that must substitute it.
 ///
-/// There are three syntaxes:
+/// There are three syntax formats:
 /// - `T -> Type1, Type2, Type3`
 /// - `T in [Type1, Type2, Type3]` or `T in Type1, Type2, Type3`  (when "in_format_allowed" is true)
 /// - `Type1, Type2, Type3` (legacy format)
 ///
-/// Returns (path, types, legacy), where
+/// Returns (path, types, format), where
 /// - `path` is the generic argument `T` (or `Type1` in legacy format)
 /// - `types` is a vector of parsed `Type` items: `Type1, Type2, Type3` (or `Type2, Type3` in legacy)
-/// - `legacy` is true if the legacy format is used
-/// - `in_format` is true if the `T in [Type1, Type2, Type3]` format is used
+/// - `format` is the attribute format: arrow, legacy, or in
 ///
 /// Note: we don't include `Type1` in `types` for the legacy format because the original stream will be copied
-/// in the generated code, so only the remaining types are requires for the substitutions.
-fn parse_parameters(input: ParseStream, in_format_allowed: bool, in_format_enforced: bool) -> syn::parse::Result<(Path, Vec<Type>, bool, bool)> {
+/// in the generated code, so only the remaining types are required for the substitutions.
+fn parse_parameters(input: ParseStream, in_format_allowed: bool, in_format_enforced: bool) -> syn::parse::Result<(Path, Vec<Type>, AttributeFormat)> {
     assert!(in_format_allowed || !in_format_enforced,
             "incompatible arguments: in_format_allowed={in_format_allowed} and in_format_enforced={in_format_enforced}");
 
     // determines the format
     let current_type = input.parse::<Path>()?;
-    let in_format = if in_format_enforced {
-        input.parse::<Token![in]>().and(Ok(true))?              // "T in [Type1, Type2, Type3]" or "T in Type1, Type2, Type3"
+    let format = if in_format_enforced && input.parse::<Token![in]>().and(Ok(true))? ||
+        in_format_allowed && input.peek(Token![in]) && input.parse::<Token![in]>().is_ok() {
+        AttributeFormat::In
+    } else if input.peek(Token![,]) && input.parse::<Token![,]>().is_ok() {
+        AttributeFormat::Legacy
     } else {
-        in_format_allowed && input.peek(Token![in])
-            && input.parse::<Token![in]>().is_ok()
-    };
-    let legacy = !in_format && input.peek(Token![,])            // "Type1, Type2, Type3"
-        && input.parse::<Token![,]>().is_ok();
-    if !in_format && !legacy {
         // default format suggested in case of error
         input.parse::<Token![->]>()?;                           // "T -> Type1, Type2, Type3"
-    }
+        AttributeFormat::Arrow
+    };
 
     // collects the other arguments depending on format
     let types: Vec<Type>;
-    if legacy {
-        // current_type is the first type and the one that'll be replaced; this is
-        // managed in the attribute's visit_mut code after returning from here
-        let vars = Punctuated::<Type, Token![,]>::parse_terminated(input)?;
-        types = vars.into_iter().collect();
-    } else {
-        let vars = if in_format {
+    let vars = match format {
+        AttributeFormat::Legacy =>
+            Punctuated::<Type, Token![,]>::parse_terminated(input)?,
+        AttributeFormat::In => {
             // brackets are optional:
             if input.peek(token::Bracket) {
                 let content;
@@ -733,22 +746,22 @@ fn parse_parameters(input: ParseStream, in_format_allowed: bool, in_format_enfor
             } else {
                 Punctuated::<Type, Token![,]>::parse_terminated(input)?
             }
-        } else {
-            Punctuated::<Type, Token![,]>::parse_terminated(input)?
-        };
-        types = vars.into_iter().collect();
-        if types.is_empty() {
-            return Err(Error::new(input.span(), "expected type"));
         }
+        AttributeFormat::Arrow =>
+            Punctuated::<Type, Token![,]>::parse_terminated(input)?,
+    };
+    types = vars.into_iter().collect();
+    if types.is_empty() {
+        return Err(Error::new(input.span(), "expected type"));
     }
-    Ok((current_type, types, legacy, in_format))
+    Ok((current_type, types, format))
 }
 
 /// Attribute parser used for inner attributes
 impl Parse for AttrParams {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let (current_type, types, legacy, _) = parse_parameters(&input, cfg!(feature = "in_format"), false)?;
-        Ok(AttrParams { generic_arg: current_type, new_types: types, legacy })
+        let (current_type, types, format) = parse_parameters(&input, cfg!(feature = "in_format"), false)?;
+        Ok(AttrParams { generic_arg: current_type, new_types: types, format })
     }
 }
 
@@ -776,8 +789,8 @@ fn to_subst_types(mut types: Vec<Type>) -> (bool, Vec<SubstType>) {
 /// Attribute argument parser used for the inner conditional attributes
 impl Parse for CondParams {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (current_type, types, legacy, in_format) = parse_parameters(input, true, true)?;
-        if !in_format || legacy {
+        let (current_type, types, format) = parse_parameters(input, true, true)?;
+        if !format.is_in() {
             return Err(input.error("wrong trait_gen_if syntax"));
         }
         let (_is_path, new_types) = to_subst_types(types);
@@ -791,9 +804,9 @@ impl Parse for CondParams {
 /// Attribute argument parser used for the procedural macro being processed
 impl Parse for Subst {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (current_type, types, legacy, in_format) = parse_parameters(input, cfg!(feature = "in_format"), false)?;
+        let (current_type, types, format) = parse_parameters(input, cfg!(feature = "in_format"), false)?;
         let (is_path, new_types) = to_subst_types(types);
-        Ok(Subst { generic_arg: current_type, new_types, legacy, in_format, is_path, can_subst_path: Vec::new() })
+        Ok(Subst { generic_arg: current_type, new_types, format, is_path, can_subst_path: Vec::new() })
     }
 }
 
@@ -895,18 +908,6 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
                 help = "The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]");
         }
     };
-    let warning = if types.in_format {
-        let message = format!(
-            "Use of temporary format '{} in [{}]' in #[trait_gen] macro",
-             pathname(&types.generic_arg),
-             &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
-        );
-        // no way to generate warnings in Rust
-        if VERBOSE || VERBOSE_TF { println!("{}\nWARNING: \n{}", "=".repeat(80), message); }
-        Some(message)
-    } else {
-        None
-    };
     if VERBOSE || VERBOSE_TF {
         println!("{}\ntrait_gen for {} -> {}: {}",
                  "=".repeat(80),
@@ -916,13 +917,23 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
         )
     }
     if VERBOSE || VERBOSE_TF { println!("\n{}\n{}", item, "-".repeat(80)); }
+    let mut output = match types.format {
+        AttributeFormat::Arrow =>
+            TokenStream::new(),
+        AttributeFormat::Legacy =>
+            item.clone(),
+        AttributeFormat::In => {
+            let message = format!(
+                "Use of deprecated format '{} in [{}]' in #[trait_gen] macro",
+                 pathname(&types.generic_arg),
+                 &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
+            );
+            // no way to generate warnings in Rust
+            if VERBOSE || VERBOSE_TF { println!("{}\nWARNING: \n{}", "=".repeat(80), message); }
+            TokenStream::from(quote!(#[deprecated = #message]))
+        }
+    };
     let ast: File = syn::parse(item).unwrap();
-    let mut output = TokenStream::new();
-    if let Some(message) = warning {
-        output.extend(TokenStream::from(quote!(
-            #[deprecated = #message]
-        )));
-    }
     while !types.new_types.is_empty() {
         let mut modified_ast = ast.clone();
         types.visit_file_mut(&mut modified_ast);
@@ -930,9 +941,6 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
         assert!(types.can_subst_path.is_empty(), "self.enabled has {} entries after type {}",
                 types.can_subst_path.len(), pathname(types.new_types.first().unwrap()));
         types.new_types.remove(0);
-    }
-    if types.legacy {
-        output.extend(TokenStream::from(quote!(#ast)));
     }
     if VERBOSE { println!("end trait_gen for {}\n{}", pathname(&types.generic_arg), "-".repeat(80)); }
     if VERBOSE { println!("{}\n{}", output, "=".repeat(80)); }

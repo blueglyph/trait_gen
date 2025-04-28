@@ -24,7 +24,7 @@ fn annotate_error(text: &str, msg: &str, span: Span) -> String {
     msg.push('\n');
     let start = span.start().column;
     let end = span.end().column;
-    println!("start={start}, end={end}");
+    // println!("start={start}, end={end}");
     if start > 0 || end > 0 {
         msg.push_str(&" ".repeat(start));
     } else {
@@ -125,7 +125,7 @@ fn parse_args() {
                         println!("{report}expecting parse error"),
                     _ if pathname(&subst.generic_arg) != generic =>
                         println!("{report}expecting generic '{}' instead of '{}'", generic, pathname(&subst.generic_arg)),
-                    _ if subst.legacy != legacy =>
+                    _ if subst.format.is_legacy() != legacy =>
                         println!("{report}expecting {}legacy", if legacy { "" } else { "non-" }),
                     _ if !subst.new_types.iter().all(|t| t.is_path() == path) =>
                         println!("{report}expecting {} mode", if path { "path" } else { "type" }),
@@ -154,7 +154,7 @@ fn parse_args() {
                             println!("{report}expecting parse error"),
                         _ if pathname(&params.generic_arg) != generic =>
                             println!("{report}expecting generic '{}' instead of '{}'", generic, pathname(&params.generic_arg)),
-                        _ if params.legacy != legacy =>
+                        _ if params.format.is_legacy() != legacy =>
                             println!("{report}expecting {}legacy", if legacy { "" } else { "non-" }),
                         _ => new_error = false
                     }
