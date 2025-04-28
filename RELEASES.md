@@ -1,3 +1,7 @@
+# 1.1.2 (2025-04-28)
+
+- improve some error messages
+
 # 1.1.1 (2025-04-27)
 
 - fix and simplify doc comment processing
