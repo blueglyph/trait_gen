@@ -1,3 +1,27 @@
+# 1.2.0 (2025-05-XX)
+
+- add negation in 'trait_gen_if':
+  ```rust
+  trait TypeEq<U> {
+      fn same_type(&self, other: &U) -> bool;
+  }
+  
+  #[trait_gen(T -> u8, u16, u32)]
+  #[trait_gen(U -> u8, u16, u32)]
+  impl TypeEq<U> for T {
+      #[trait_gen_if(T in U)]
+      fn same_type(&self, _other: &U) -> bool {
+          true
+      }
+      #[trait_gen_if(!T in U)]
+      fn same_type(&self, _other: &U) -> bool {
+          false
+      }
+  }
+  ```
+  Note: Attaching an attribute to an expression is still experimental, so we can't simplify the example above, unfortunately.
+- `trait_gen_if` must now be declared (I didn't bump the version to 2.x, even if it's technically not back-compatible because of that; the change is minor and so is the current use of this macro).
+
 # 1.1.2 (2025-04-28)
 
 - improve some error messages

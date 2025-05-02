@@ -133,13 +133,13 @@ impl<T: PrimInt> MyLog for T {
 ## Conditional Code
 
 The use of conditional inclusion of code offers more flexibility in the implementation. Within a trait-gen
-implementation, the pseudo-attribute `#[trait_gen_if(T in Type1, Type2, Type3]` disables the attached
+implementation, the attribute `#[trait_gen_if(T in Type1, Type2, Type3]` disables the attached
 code if `T` isn't in the list of types.
 
 Here is an example:
 
 ```rust
-# use trait_gen::trait_gen;
+use trait_gen::{trait_gen, trait_gen_if};
 
 trait Binary {
     const DECIMAL_DIGITS: usize;
@@ -167,9 +167,6 @@ impl Binary for T {
     }
 }
 ```
-
-We said it was a _pseudo_ attribute because it's removed by trait-gen when it generates the final
-code that will be seen by the compiler. So `trait_gen_if` mustn't be declared.
 
 We've seen earlier that `type_gen` was a synonym of `trait_gen`. For the sake of coherency, a
 `type_gen_if` is also provided as a synonym of `trait_gen_if`.

@@ -91,7 +91,7 @@
 //! Here is an example:
 //!
 //! ```rust
-//! # use trait_gen::trait_gen;
+//! # use trait_gen::{trait_gen, trait_gen_if};
 //!
 //! trait Binary {
 //!     const DECIMAL_DIGITS: usize;
@@ -235,7 +235,7 @@ use std::fmt::{Display, Formatter};
 use proc_macro::TokenStream;
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, Token, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, Error, bracketed, MetaList, parse_quote, token};
+use syn::{Generics, GenericParam, Token, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, Error, bracketed, MetaList, token};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -335,9 +335,12 @@ struct AttrParams {
 /// argument and the types as [String], to make the comparison easier.
 struct CondParams {
     /// generic argument
-    generic_arg: String,
+    generic_arg: Type,
     /// if the argument matches at least one of those types, the attached code is enabled
-    types: HashSet<String>,
+    types_str: HashSet<String>,
+    types: Vec<Type>,
+    /// negate the condition: the condition becomes true when the argument doesn't match any of the `types`
+    is_negated: bool
 }
 
 impl Subst {
@@ -467,22 +470,39 @@ impl VisitMut for Subst {
             match ident.as_str() {
                 // conditional pseudo-attribute (TYPE_GEN_IF == TRAIT_GEN_IF when type_gen is disabled)
                 TRAIT_GEN_IF | TYPE_GEN_IF => {
-                    // Instead of removing the code attached to the attribute, which would require visiting all alternatives of
-                    // Item, ImplItem, TraitItem, and ForeignItem (and update the macro whenever a new enum alternative is added),
-                    // we replace the conditional attribute with
-                    // - one that is ignored when the condition is true:            #[cfg(all())]
-                    // - one that prevents compilation when the condition is false: #[cfg(any())]
-                    // Note that #[cfg(all())] doesn't invalidate other cfg attributes that may have been placed before or after
-                    // this conditional attribute: thankfully, these conditions stack.
+                    // checks that the syntax is fine and performs the type substitutions if required
                     match node.parse_args::<CondParams>() {
-                        Ok(attr) => {
-                            if pathname(&self.generic_arg) == attr.generic_arg {
-                                *node = if attr.types.contains(&pathname(&self.new_types.first().unwrap())) {
-                                    parse_quote!(#[cfg(all())]) // enables the code
-                                } else {
-                                    parse_quote!(#[cfg(any())]) // disables the code
-                                }
+                        Ok(mut cond) => {
+                            // TODO: change something so that the attribute knows it's been already checked (avoid double error msgs)
+                            let mut output = proc_macro2::TokenStream::new();
+                            if VERBOSE { println!("- {} -> {}", pathname(&self.generic_arg), pathname(self.new_types.first().unwrap())); }
+                            let mut g = cond.generic_arg;
+                            self.visit_type_mut(&mut g);
+                            if cond.is_negated {
+                                output.extend(quote!(!#g in));
+                            } else {
+                                output.extend(quote!(#g in));
                             }
+                            let mut first = true;
+                            for ty in &mut cond.types {
+                                // checks if substitutions must be made in that argument:
+                                self.visit_type_mut(ty);
+                                if !first {
+                                    output.extend(quote!(, ));
+                                }
+                                output.extend(quote!(#ty));
+                                first = false;
+                            }
+                            let original = pathname(&node);
+                            if let syn::Meta::List(MetaList { ref mut tokens, .. }) = node.meta {
+                                if VERBOSE { println!("  {original} => {}", pathname(&output)); }
+                                *tokens = output;
+                                return;
+                            } else {
+                                // shouldn't happen
+                                abort!(node.meta.span(), "invalid {} attribute format", ident;
+                                    help = "The expected format is: #[{}({} -> {})]", ident, pathname(&self.generic_arg), self.get_example_types());
+                            };
                         }
                         Err(err) => {
                             // gives a personalized hint
@@ -490,7 +510,6 @@ impl VisitMut for Subst {
                                 help = "The expected format is: #[{}({} in {})]", ident, pathname(&self.generic_arg), self.get_example_types());
                         }
                     };
-                    return;
                 }
                 // embedded trait-gen attributes
                 TRAIT_GEN | TYPE_GEN => {
@@ -621,12 +640,12 @@ impl VisitMut for Subst {
         let path_name = pathname(path);
         let path_length = path.segments.len();
         if let Some(length) = path_prefix_len(&self.generic_arg, path) {
-            // If U is both a constant and the generic argument, in an expression so when
-            // self.substitution_enabled() == false, we must distinguish two cases:
+            // If U is both a constant and the generic argument, in an expression (so when
+            // self.substitution_enabled() == false), we must distinguish two cases:
             // - U::MAX must be replaced (length < path_length)
             // - U or U.add(1) must stay
             if length < path_length || self.can_subst_path() {
-                if VERBOSE { print!("path: {} length = {}", path_name, length); }
+                if VERBOSE { print!("[path] path: {} length = {}", path_name, length); }
                 match self.new_types.first().unwrap() {
                     SubstType::Path(p) => {
                         let mut new_seg = p.segments.clone();
@@ -670,8 +689,10 @@ impl VisitMut for Subst {
                     let path_length = path.segments.len();
                     if let Some(length) = path_prefix_len(&self.generic_arg, path) {
                         if length < path_length || self.can_subst_path() {
-                            if VERBOSE { println!("type path: {} length = {}", path_name, length); }
+                            // TODO: find a case where length < path_length
+                            if VERBOSE { print!("[type] type path: {} length = {length}, path length = {path_length} {} -> ", path_name, if self.can_subst_path() { ", can_subst" } else { "" }); }
                             *node = if let SubstType::Type(ty) = self.new_types.first().unwrap() {
+                                if VERBOSE { println!("{}", pathname(ty)); }
                                 ty.clone()
                             } else {
                                 panic!("found path item instead of type in SubstType")
@@ -704,23 +725,31 @@ impl VisitMut for Subst {
 ///
 /// There are three syntax formats:
 /// - `T -> Type1, Type2, Type3`
-/// - `T in [Type1, Type2, Type3]` or `T in Type1, Type2, Type3`  (when "in_format_allowed" is true)
+/// - `T in [Type1, Type2, Type3]` or `T in Type1, Type2, Type3`  (when `in_format_allowed` is true)
 /// - `Type1, Type2, Type3` (legacy format)
 ///
-/// Returns (path, types, format), where
+/// The `is_conditional` parameter forces the "in" format and allows a negation, "!in".
+///
+/// Returns (path, types, format, is_negated), where
 /// - `path` is the generic argument `T` (or `Type1` in legacy format)
 /// - `types` is a vector of parsed `Type` items: `Type1, Type2, Type3` (or `Type2, Type3` in legacy)
 /// - `format` is the attribute format: arrow, legacy, or in
+/// - `is_negated` is true if the `!in` format was found instead of `in` in a conditional
 ///
 /// Note: we don't include `Type1` in `types` for the legacy format because the original stream will be copied
 /// in the generated code, so only the remaining types are required for the substitutions.
-fn parse_parameters(input: ParseStream, in_format_allowed: bool, in_format_enforced: bool) -> syn::parse::Result<(Path, Vec<Type>, AttributeFormat)> {
-    assert!(in_format_allowed || !in_format_enforced,
-            "incompatible arguments: in_format_allowed={in_format_allowed} and in_format_enforced={in_format_enforced}");
-
+fn parse_parameters(input: ParseStream, is_conditional: bool)
+    -> syn::parse::Result<(SubstType, Vec<Type>, AttributeFormat, bool)>
+{
+    let in_format_allowed = is_conditional || cfg!(feature = "in_format");
     // determines the format
-    let current_type = input.parse::<Path>()?;
-    let format = if in_format_enforced && input.parse::<Token![in]>().and(Ok(true))? ||
+    let is_negated = is_conditional && input.peek(Token![!]) && input.parse::<Token![!]>().is_ok();
+    let current_type = if is_conditional {
+        SubstType::Type(input.parse::<Type>()?)
+    } else {
+        SubstType::Path(input.parse::<Path>()?)
+    };
+    let format = if is_conditional && input.parse::<Token![in]>().and(Ok(true))? ||
         in_format_allowed && input.peek(Token![in]) && input.parse::<Token![in]>().is_ok() {
         AttributeFormat::In
     } else if input.peek(Token![,]) && input.parse::<Token![,]>().is_ok() {
@@ -754,14 +783,18 @@ fn parse_parameters(input: ParseStream, in_format_allowed: bool, in_format_enfor
     if types.is_empty() {
         return Err(Error::new(input.span(), "expected type"));
     }
-    Ok((current_type, types, format))
+    Ok((current_type, types, format, is_negated))
 }
 
 /// Attribute parser used for inner attributes
 impl Parse for AttrParams {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let (current_type, types, format) = parse_parameters(&input, cfg!(feature = "in_format"), false)?;
-        Ok(AttrParams { generic_arg: current_type, new_types: types, format })
+        let (current_type, types, format, _) = parse_parameters(&input, false)?;
+        if let SubstType::Path(path) = current_type {
+            Ok(AttrParams { generic_arg: path, new_types: types, format })
+        } else {
+            panic!()    // should never happen per design
+        }
     }
 }
 
@@ -789,24 +822,33 @@ fn to_subst_types(mut types: Vec<Type>) -> (bool, Vec<SubstType>) {
 /// Attribute argument parser used for the inner conditional attributes
 impl Parse for CondParams {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (current_type, types, format) = parse_parameters(input, true, true)?;
+        let (current_type, types, format, is_negated) = parse_parameters(input, true)?;
         if !format.is_in() {
             return Err(input.error("wrong trait_gen_if syntax"));
         }
-        let (_is_path, new_types) = to_subst_types(types);
-        Ok(CondParams {
-            generic_arg: pathname(&current_type),
-            types: new_types.into_iter().map(|t| pathname(&t)).collect()
-        })
+        if let SubstType::Type(ty) = current_type {
+            Ok(CondParams {
+                generic_arg: ty,
+                types_str: types.iter().map(|t| pathname(t)).collect(),
+                types,
+                is_negated,
+            })
+        } else {
+            panic!()    // should never happen per design
+        }
     }
 }
 
 /// Attribute argument parser used for the procedural macro being processed
 impl Parse for Subst {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (current_type, types, format) = parse_parameters(input, cfg!(feature = "in_format"), false)?;
+        let (current_type, types, format, _) = parse_parameters(input, false)?;
         let (is_path, new_types) = to_subst_types(types);
-        Ok(Subst { generic_arg: current_type, new_types, format, is_path, can_subst_path: Vec::new() })
+        if let SubstType::Path(path) = current_type {
+            Ok(Subst { generic_arg: path, new_types, format, is_path, can_subst_path: Vec::new() })
+        } else {
+            panic!()    // should never happen per design
+        }
     }
 }
 
@@ -861,9 +903,7 @@ impl VisitMut for TurboFish {
 /// is not a valid floating-point literal.
 ///
 /// The `#[trait_gen_if(T in Type1, Type2, Type3)` can be used to conditionally enable the attached code
-/// if `T` is included in the list of types, or to disable it when it's not included. It's not a real
-/// attribute processed by the compiler, since it's removed by `trait-gen` when it scans the code, so
-/// there's no need to include it in a `use` declaration—in fact, it's not allowed.
+/// if `T` is included in the list of types, or to disable it when it's not included.
 ///
 /// Finally, the actual type replaces any `${T}` occurrence in doc comments, macros and string literals.
 ///
@@ -956,4 +996,44 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_error]
 pub fn type_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     trait_gen(args, item)
+}
+
+//==============================================================================
+// Conditional attributes
+
+fn process_conditional_attribute(name: &str, args: TokenStream, item: TokenStream) -> TokenStream {
+    if VERBOSE { println!("process_conditional_attribute({}, {})", args.to_string(), item.to_string()); }
+    let new_code = match syn::parse::<CondParams>(args) {
+        Ok(attr) => {
+            if attr.types_str.contains(&pathname(&attr.generic_arg)) ^ attr.is_negated {
+                item                // enables the code
+            } else {
+                TokenStream::new()  // disables the code
+            }
+        }
+        Err(err) => {
+            // shouldn't happen, unless the attribute is used out of a #[trait_gen] attribute scope
+            abort!(err.span(), err;
+            help = "The expected format is: #[{}(T in Type1, Type2, Type3)]", name);
+        }
+    };
+    new_code
+}
+
+/// Generates the attached code if the condition is met.
+#[proc_macro_attribute]
+#[proc_macro_error]
+pub fn trait_gen_if(args: TokenStream, item: TokenStream) -> TokenStream {
+    process_conditional_attribute("trait_gen_if", args, item)
+}
+
+#[cfg(feature = "type_gen")]
+/// Generates the attached code for all the types given in argument.
+///
+/// This is only a synonym of the [trait_gen_if()] attribute (since it can be applied to other
+/// elements than trait implementations).
+#[proc_macro_attribute]
+#[proc_macro_error]
+pub fn type_gen_if(args: TokenStream, item: TokenStream) -> TokenStream {
+    process_conditional_attribute("type_gen_if", args, item)
 }

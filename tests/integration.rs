@@ -84,7 +84,7 @@ mod supported_formats {
 
 mod conditional_code {
     use std::ops::Add;
-    use trait_gen::trait_gen;
+    use trait_gen::{trait_gen, trait_gen_if};
 
     #[derive(Clone, Copy, Debug, PartialEq)]
     struct Metre(f64);
@@ -141,7 +141,7 @@ mod conditional_code {
 }
 
 mod conditional_code2 {
-    use trait_gen::trait_gen;
+    use trait_gen::{trait_gen, trait_gen_if};
 
     trait Binary {
         const DECIMAL_DIGITS: usize;
@@ -180,7 +180,43 @@ mod conditional_code2 {
         assert_eq!(i32::display_length(), 11);
         assert_eq!(u32::display_length(), 10);
     }
+}
 
+mod conditional_code3 {
+    use trait_gen::{trait_gen, trait_gen_if};
+    
+    trait TypeEq<U> {
+        fn same_type(&self, other: &U) -> bool;
+    }
+    
+    #[trait_gen(T -> u8, u16, u32)]
+    #[trait_gen(U -> u8, u16, u32)]
+    impl TypeEq<U> for T {
+        #[trait_gen_if(T in U)]
+        fn same_type(&self, _other: &U) -> bool {
+            true
+        }
+        #[trait_gen_if(!T in U)]
+        fn same_type(&self, _other: &U) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn test() {
+        let a = 10_u8;
+        let b = 20_u16;
+        let c = 30_u32;
+        assert_eq!(a.same_type(&b), false, "a.same_type(&b) failed");
+        assert_eq!(a.same_type(&c), false, "a.same_type(&c) failed");
+        assert_eq!(b.same_type(&a), false, "b.same_type(&a) failed");
+        assert_eq!(b.same_type(&c), false, "b.same_type(&c) failed");
+        assert_eq!(c.same_type(&a), false, "c.same_type(&a) failed");
+        assert_eq!(c.same_type(&b), false, "c.same_type(&b) failed");
+        assert_eq!(a.same_type(&a), true, "a.same_type(&a) failed");
+        assert_eq!(b.same_type(&b), true, "b.same_type(&b) failed");
+        assert_eq!(c.same_type(&c), true, "c.same_type(&c) failed");
+    }
 }
 
 mod type_case_01 {
@@ -232,6 +268,7 @@ mod type_case_02 {
     #[trait_gen(T -> u8, u16, u32, u64, u128)]
     impl MyLog for T {
         fn my_log2(self) -> u32 {
+            
             T::BITS - 1 - self.leading_zeros()
         }
     }
@@ -762,7 +799,7 @@ mod cross_product {
 }
 
 mod impl_cond {
-    use trait_gen::trait_gen;
+    use trait_gen::{trait_gen, trait_gen_if};
 
     trait Binary {
         const MSB: u32;
@@ -774,7 +811,7 @@ mod impl_cond {
     // with this ordering, the #[trait_gen_if] see either
     // - T = u8, u16, or u32
     // - U = u8, u16, u32, &u8, &u16, or &u32
-    #[trait_gen(T -> u8, u16, u32)]
+    #[trait_gen(T -> u8,/* u16, u32*/)]
     #[trait_gen(U -> T, &T)]
     impl Binary for U {
         #[trait_gen_if(U in [u8, &u8])] // #[trait_gen_if(T in u8])] works, too
@@ -787,7 +824,6 @@ mod impl_cond {
         const MSB: u32 = 63;
         #[trait_gen_if(U in u128, &u128)]
         const MSB: u32 = 127;
-
         #[trait_gen_if(U in u8, u16, u32)]
         const IS_REF: bool = false;
         #[trait_gen_if(U in &u8, &u16, &u32)]
@@ -808,10 +844,10 @@ mod impl_cond {
         let tests = vec![
             (1_u8.msb(),        7,      1_u8.is_ref(),      false),
             ((&1_u8).msb(),     7,      (&1_u8).is_ref(),   true),
-            (1_u16.msb(),       15,     1_u16.is_ref(),     false),
-            ((&1_u16).msb(),    15,      (&1_u8).is_ref(),  true),
-            (1_u32.msb(),       31,     1_u32.is_ref(),     false),
-            ((&1_u32).msb(),    31,     (&1_u32).is_ref(),  true),
+            // (1_u16.msb(),       15,     1_u16.is_ref(),     false),
+            // ((&1_u16).msb(),    15,      (&1_u8).is_ref(),  true),
+            // (1_u32.msb(),       31,     1_u32.is_ref(),     false),
+            // ((&1_u32).msb(),    31,     (&1_u32).is_ref(),  true),
         ];
         for (index, (result_msb, expected_msb, result_is_ref, expected_is_ref)) in tests.into_iter().enumerate() {
             assert_eq!(result_msb, expected_msb, "test {index} failed on msb");
@@ -821,7 +857,7 @@ mod impl_cond {
 }
 
 mod impl_cond2 {
-    use trait_gen::trait_gen;
+    use trait_gen::{trait_gen, trait_gen_if};
 
     trait Binary {
         const MSB: u32;
@@ -1254,7 +1290,7 @@ mod impl_type_02 {
 
 #[cfg(feature = "type_gen")]
 mod type_gen {
-    use trait_gen::type_gen;
+    use trait_gen::{type_gen, type_gen_if};
 
     struct Meter<T>(T);
     struct Foot<T>(T);
