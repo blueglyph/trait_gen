@@ -9,7 +9,7 @@
 //! It makes the code easier to read and to maintain.
 //!
 //! It was first intended at trait implementation, hence the name of the crate, but it can also
-//! be used on generic type implementations; there are some examples in the [integration tests](https://github.com/blueglyph/trait_gen/blob/v1.1.0/tests/integration.rs).
+//! be used on generic type implementations; there are some examples in the [integration tests](https://github.com/blueglyph/trait_gen/blob/v1.2.0/tests/integration.rs).
 //!
 //! Here is a short example:
 //!
@@ -79,8 +79,8 @@
 //! - _`type_gen` is a synonym attribute that can be used instead of `trait_gen` when the `type_gen` feature
 //!   is enabled (it requires `use trait_gen::type_gen`)_.
 //!
-//! For more examples, look at the [README.md](https://github.com/blueglyph/trait_gen/blob/v1.1.0/README.md)
-//! or the crate [integration tests](https://github.com/blueglyph/trait_gen/blob/v1.1.0/tests/integration.rs).
+//! For more examples, look at the [README.md](https://github.com/blueglyph/trait_gen/blob/v1.2.0/README.md)
+//! or the crate [integration tests](https://github.com/blueglyph/trait_gen/blob/v1.2.0/tests/integration.rs).
 //!
 //! ## Conditional Code
 //!
@@ -120,24 +120,33 @@
 //! }
 //! ```
 //!
-//! We said it was a _pseudo_ attribute because it's removed by trait-gen when it generates the final
-//! code that will be seen by the compiler. So `trait_gen_if` mustn't be declared.
+//! The arguments can be placed on either side of `in`, so you can also use it to compare
+//! arguments, as shown below. Note the `!T in U`, which means the code is enabled when
+//! `T` is *not* in the given list, so here when `T != U`.
+//!
+//! ```rust
+//! use trait_gen::{trait_gen, trait_gen_if};
+//!
+//! trait TypeEq<U> {
+//!     fn same_type(&self, other: &U) -> bool;
+//! }
+//!
+//! #[trait_gen(T -> u8, u16, u32)]
+//! #[trait_gen(U -> u8, u16, u32)]
+//! impl TypeEq<U> for T {
+//!     #[trait_gen_if(T in U)]
+//!     fn same_type(&self, _other: &U) -> bool {
+//!         true
+//!     }
+//!     #[trait_gen_if(!T in U)]
+//!     fn same_type(&self, _other: &U) -> bool {
+//!         false
+//!     }
+//! }
+//! ```
 //!
 //! We've seen earlier that `type_gen` was a synonym of `trait_gen`. For the sake of coherency, a
 //! `type_gen_if` is also provided as a synonym of `trait_gen_if`.
-//! Both `type_gen` and `type_gen_if` require the `type_gen` feature.
-//!
-//! ### Remarks about the generated code and the use of `#[cfg(...)]`
-//!
-//! In order to keep the implemention this conditional pseudo-attribute reasonably simple in this
-//! crate, the code disabled by `trait_gen_if` isn't removed when trait-gen generates the final
-//! code; instead, it's prefixed by the `#[cfg(any())]` attribute, which disables it. The code
-//! that isn't disabled is prefixed by the `#[cfg(all())]` attribute, which is neutral. In fact,
-//! trait-gen simply replaces the pseudo attribute by one of those.
-//!
-//! The `#[cfg(all())]` is neutral because it doesn't overwrite any other `cfg` attribute that
-//! may target the same piece of code. If you need to attach a `#[cfg(...)]` to the same code as
-//! the `trait_gen_if` attribute's, you can place either before or after; it doesn't matter.
 //!
 //! ## Legacy Format
 //!
@@ -203,7 +212,7 @@
 //! type declaration with the same literal as the generic argument. For instance, this code fails to compile
 //! because of the generic function:
 //!
-//!   ```rust, compile_fail
+//!   ```rust, ignore
 //!   # use num::Num;
 //!   # use trait_gen::trait_gen;
 //!   #
@@ -337,8 +346,7 @@ struct CondParams {
     /// generic argument
     generic_arg: Type,
     /// if the argument matches at least one of those types, the attached code is enabled
-    types_str: HashSet<String>,
-    types: Vec<Type>,
+    types: HashSet<Type>,
     /// negate the condition: the condition becomes true when the argument doesn't match any of the `types`
     is_negated: bool
 }
@@ -466,14 +474,12 @@ impl VisitMut for Subst {
     fn visit_attribute_mut(&mut self, node: &mut Attribute) {
         if let Some(PathSegment { ident, .. }) = node.path().segments.first() {
             let ident = ident.to_string();
-            #[allow(unreachable_patterns)]
             match ident.as_str() {
                 // conditional pseudo-attribute (TYPE_GEN_IF == TRAIT_GEN_IF when type_gen is disabled)
                 TRAIT_GEN_IF | TYPE_GEN_IF => {
                     // checks that the syntax is fine and performs the type substitutions if required
                     match node.parse_args::<CondParams>() {
-                        Ok(mut cond) => {
-                            // TODO: change something so that the attribute knows it's been already checked (avoid double error msgs)
+                        Ok(cond) => {
                             let mut output = proc_macro2::TokenStream::new();
                             if VERBOSE { println!("- {} -> {}", pathname(&self.generic_arg), pathname(self.new_types.first().unwrap())); }
                             let mut g = cond.generic_arg;
@@ -484,9 +490,9 @@ impl VisitMut for Subst {
                                 output.extend(quote!(#g in));
                             }
                             let mut first = true;
-                            for ty in &mut cond.types {
+                            for mut ty in cond.types {
                                 // checks if substitutions must be made in that argument:
-                                self.visit_type_mut(ty);
+                                self.visit_type_mut(&mut ty);
                                 if !first {
                                     output.extend(quote!(, ));
                                 }
@@ -728,7 +734,9 @@ impl VisitMut for Subst {
 /// - `T in [Type1, Type2, Type3]` or `T in Type1, Type2, Type3`  (when `in_format_allowed` is true)
 /// - `Type1, Type2, Type3` (legacy format)
 ///
-/// The `is_conditional` parameter forces the "in" format and allows a negation, "!in".
+/// The `is_conditional` parameter forces the "in" format and allows a negation, "!in". It also returns
+/// a `Type` argument (`SubstType::Type`) instead of a `Path` because the argument will be substituted
+/// by a type by the trait-gen attribute.
 ///
 /// Returns (path, types, format, is_negated), where
 /// - `path` is the generic argument `T` (or `Type1` in legacy format)
@@ -829,8 +837,7 @@ impl Parse for CondParams {
         if let SubstType::Type(ty) = current_type {
             Ok(CondParams {
                 generic_arg: ty,
-                types_str: types.iter().map(|t| pathname(t)).collect(),
-                types,
+                types: types.into_iter().collect(),
                 is_negated,
             })
         } else {
@@ -990,8 +997,8 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
 #[cfg(feature = "type_gen")]
 /// Generates the attached code for all the types given in argument.
 ///
-/// This is only a synonym of the [trait_gen()] attribute (since it can be applied to other
-/// elements than trait implementations).
+/// This is only a synonym of the [trait_gen()] attribute, and it's provided since these attributes can
+/// be applied to other elements than trait implementations.
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn type_gen(args: TokenStream, item: TokenStream) -> TokenStream {
@@ -1005,7 +1012,7 @@ fn process_conditional_attribute(name: &str, args: TokenStream, item: TokenStrea
     if VERBOSE { println!("process_conditional_attribute({}, {})", args.to_string(), item.to_string()); }
     let new_code = match syn::parse::<CondParams>(args) {
         Ok(attr) => {
-            if attr.types_str.contains(&pathname(&attr.generic_arg)) ^ attr.is_negated {
+            if attr.types.contains(&attr.generic_arg) ^ attr.is_negated {
                 item                // enables the code
             } else {
                 TokenStream::new()  // disables the code
@@ -1021,6 +1028,8 @@ fn process_conditional_attribute(name: &str, args: TokenStream, item: TokenStrea
 }
 
 /// Generates the attached code if the condition is met.
+///
+/// Please refer to the [crate documentation](crate#conditional-code).
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn trait_gen_if(args: TokenStream, item: TokenStream) -> TokenStream {
@@ -1028,10 +1037,12 @@ pub fn trait_gen_if(args: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[cfg(feature = "type_gen")]
-/// Generates the attached code for all the types given in argument.
+/// Generates the attached code if the condition is met.
 ///
-/// This is only a synonym of the [trait_gen_if()] attribute (since it can be applied to other
-/// elements than trait implementations).
+/// This is only a synonym of the [trait_gen_if()] attribute, and it's provided since these attributes can
+/// be applied to other elements than trait implementations.
+///
+/// Please refer to the [crate documentation](crate#conditional-code).
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn type_gen_if(args: TokenStream, item: TokenStream) -> TokenStream {

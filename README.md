@@ -132,9 +132,7 @@ impl<T: PrimInt> MyLog for T {
 
 ## Conditional Code
 
-The use of conditional inclusion of code offers more flexibility in the implementation. Within a trait-gen
-implementation, the attribute `#[trait_gen_if(T in Type1, Type2, Type3]` disables the attached
-code if `T` isn't in the list of types.
+The use of conditional inclusion of code offers more flexibility in the implementation. Within a trait-gen implementation, the attribute `#[trait_gen_if(T in Type1, Type2, Type3]` disables the attached code if `T` isn't in the list of types.
 
 Here is an example:
 
@@ -168,9 +166,31 @@ impl Binary for T {
 }
 ```
 
+The arguments can be placed on either side of `in`, so you can also use it to compare arguments, as shown below. Note the `!T in U`, which means the code is enabled when `T` is *not* in the given list, so here when `T != U`. 
+
+```rust
+use trait_gen::{trait_gen, trait_gen_if};
+
+trait TypeEq<U> {
+    fn same_type(&self, other: &U) -> bool;
+}
+
+#[trait_gen(T -> u8, u16, u32)]
+#[trait_gen(U -> u8, u16, u32)]
+impl TypeEq<U> for T {
+    #[trait_gen_if(T in U)]
+    fn same_type(&self, _other: &U) -> bool {
+        true
+    }
+    #[trait_gen_if(!T in U)]
+    fn same_type(&self, _other: &U) -> bool {
+        false
+    }
+}
+```
+
 We've seen earlier that `type_gen` was a synonym of `trait_gen`. For the sake of coherency, a
 `type_gen_if` is also provided as a synonym of `trait_gen_if`.
-Both `type_gen` and `type_gen_if` require the `type_gen` feature.
 
 _Thanks to **Daniel Vigovszky** for giving me this idea! He first implemented it, although differently, in a fork called [conditional_trait_gen](https://github.com/vigoo/conditional_trait_gen). I had pondered about some use-cases that would require such a feature in an old post but never got around to implementing it until now._
 

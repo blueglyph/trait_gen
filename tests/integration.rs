@@ -268,7 +268,7 @@ mod type_case_02 {
     #[trait_gen(T -> u8, u16, u32, u64, u128)]
     impl MyLog for T {
         fn my_log2(self) -> u32 {
-            
+
             T::BITS - 1 - self.leading_zeros()
         }
     }
@@ -1312,5 +1312,25 @@ mod type_gen {
         assert_eq!(Foot::<f64>::from_meter(Meter(1.0_f64)).0, 3.372_f64);
         assert_eq!(Foot::<f32>::METERS_TO_FEET, 3.37_f32);
         assert_eq!(Foot::<f64>::METERS_TO_FEET, 3.372_f64);
+    }
+}
+
+mod trait_gen_if_alone {
+    use trait_gen::trait_gen_if;
+
+    // Note: this attribute really shouldn't be used alone. If you want to disable code, use `#[cfg(any())]`.
+
+    #[trait_gen_if(() in ())]
+    struct Necessary;
+
+    #[trait_gen_if(!() in ())]
+    #[test]
+    fn failure() {
+        panic!("This shouldn't exist")
+    }
+
+    #[test]
+    fn test() {
+        let _a: Necessary;
     }
 }

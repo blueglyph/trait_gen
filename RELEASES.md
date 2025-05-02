@@ -1,7 +1,9 @@
-# 1.2.0 (2025-05-XX)
+# 1.2.0 (2025-05-02)
 
-- add negation in 'trait_gen_if':
+- add negation in 'trait_gen_if' (the `!` must be in first position after the opening parenthesis):
   ```rust
+  use trait_gen::{trait_gen, trait_gen_if}
+  
   trait TypeEq<U> {
       fn same_type(&self, other: &U) -> bool;
   }
@@ -20,7 +22,7 @@
   }
   ```
   Note: Attaching an attribute to an expression is still experimental, so we can't simplify the example above, unfortunately.
-- `trait_gen_if` must now be declared (I didn't bump the version to 2.x, even if it's technically not back-compatible because of that; the change is minor and so is the current use of this macro).
+- `trait_gen_if` and `type_gen_if` must now be declared. I didn't bump the version to 2.x, even if it's technically not back-compatible because of that; the change is minor and so is the current use of this macro. What can I say; I'm flawed.
 
 # 1.1.2 (2025-04-28)
 
