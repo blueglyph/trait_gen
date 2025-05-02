@@ -406,7 +406,7 @@ This code doesn't work because `u64` also happens to be the first type of the li
 An alternative format is also supported when the `in_format` feature is enabled:
 
 ```cargo
-trait-gen = { version="1.1", features=["in_format"] }
+trait-gen = { version="1.2", features=["in_format"] }
 ```
 
 **<u>Warning</u>: This feature is temporary, and there is no guarantee that it will be maintained.**
