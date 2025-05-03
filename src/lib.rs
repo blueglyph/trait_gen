@@ -148,64 +148,6 @@
 //! We've seen earlier that `type_gen` was a synonym of `trait_gen`. For the sake of coherency, a
 //! `type_gen_if` is also provided as a synonym of `trait_gen_if`.
 //!
-//! ## Legacy Format
-//!
-//! The attribute used a shorter format in earlier versions, which is still supported even though it
-//! may be more confusing to read:
-//!
-//! ```rust
-//! # use trait_gen::trait_gen;
-//! # struct Type1; struct Type2; struct Type3;
-//! # trait Trait {}
-//! #[trait_gen(Type1, Type2, Type3)]
-//! impl Trait for Type1 {
-//!     // ...
-//! }
-//! ```
-//!
-//! is a shortcut for the equivalent attribute with the other format:
-//!
-//! ```rust
-//! # use trait_gen::trait_gen;
-//! # struct Type1; struct Type2; struct Type3;
-//! # trait Trait {}
-//! #[trait_gen(Type1 -> Type1, Type2, Type3)]
-//! impl Trait for Type1 {
-//!     // ...
-//! }
-//! ```
-//!
-//! ## Alternative Format
-//!
-//! An alternative format is also supported when the `in_format` feature is enabled:
-//!
-//! ```cargo
-//! trait-gen = { version="1.2", features=["in_format"] }
-//! ```
-//!
-//! **<u>Warning</u>: This feature is temporary, and there is no guarantee that it will be maintained.**
-//!
-//! Here, `in` is used instead of an arrow `->`, and the argument types must be between square brackets:
-//!
-//! ```rust
-//! # use trait_gen::trait_gen;
-//! # trait MyLog { fn my_log2(self) -> u32; }
-//! # #[cfg(feature = "in_format")]
-//! #[trait_gen(T in [u8, u16, u32, u64, u128])]
-//! # #[cfg(not(feature = "in_format"))]
-//! # #[trait_gen(T -> u8, u16, u32, u64, u128)]
-//! impl MyLog for T {
-//!     fn my_log2(self) -> u32 {
-//!         T::BITS - 1 - self.leading_zeros()
-//!     }
-//! }
-//! ```
-//!
-//! Using this format issues 'deprecated' warnings that you can turn off by adding the `#![allow(deprecated)]`
-//! directive at the top of the file or by adding `#[allow(deprecated)]` where the generated code is used.
-//!
-//! The square brackets are optional since version 1.1: `#[trait_gen(T in u8, u16)]` is valid.
-//!
 //! ## Limitations
 //!
 //! * The procedural macro of the `trait_gen` attribute can't handle scopes, so it doesn't support any
@@ -278,7 +220,7 @@ const TYPE_GEN_IF: &str = if cfg!(feature = "type_gen") { "type_gen_if" } else {
 //==============================================================================
 // Main substitution types and their trait implementations
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 /// Substitution item, either a Path (`super::Type`) or a Type (`&mut Type`)
 enum SubstType {
     Path(Path),
@@ -290,6 +232,15 @@ impl ToTokens for SubstType {
         match self {
             SubstType::Path(path) => path.to_tokens(tokens),
             SubstType::Type(ty) => ty.to_tokens(tokens)
+        }
+    }
+}
+
+impl std::fmt::Debug for SubstType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SubstType::Path(p) => write!(f, "Path({})", pathname(p)),
+            SubstType::Type(t) => write!(f, "Type({})", pathname(t)),
         }
     }
 }
@@ -309,6 +260,51 @@ impl AttributeFormat {
 
     fn is_in(&self) -> bool {
         self == &AttributeFormat::In
+    }
+}
+
+/// Advanced formats
+enum ArgType {
+    /// - `#[trait_gen_if(T in U)`
+    Cond(Type),
+    /// All combinations (can have more than 2 arguments)
+    /// - `#[trait_gen(T -> u8, u16)]`
+    ///
+    ///   (T) = (u8), (u16)
+    /// - `#[trait_gen(T, U -> u8, u16, u32)]`
+    ///
+    ///   (T, U) = (u8, u8), (u8, u16), (u8, u32), (u16, u8), (u16, u16), (u16, u32) , ...
+    ///
+    All(Vec<Path>),
+    /// All combinations of 2 different arguments
+    ///
+    /// - `#[trait_gen(T != U -> u8, u16, u32)]`
+    ///
+    ///   (T, U) = (u8, u16), (u8, u32), (u16, u8), (u16, u32), (u32, u8), (u32, u16)
+    Diff(Path, Path),
+    /// All combinations of 2 arguments where 1st's items are exclusively earlier in the list than the 2nd's
+    ///
+    /// - `#[trait_gen(T !< U -> u8, u16, u32)]`
+    ///
+    ///   (T, U) = (u8, u16), (u8, u32), (u16, u32)
+    Exclusive(Path, Path),
+    /// All combinations of 2 arguments where 1st's items are inclusively earlier in the list than the 2nd's
+    ///
+    /// - `#[trait_gen(T =< U -> u8, u16, u32)]`
+    ///
+    ///   (T, U) = (u8, u8), (u8, u16), (u8, u32), (u16, u16), (u16, u32), (u32, u32)
+    Inclusive(Path, Path),
+}
+
+impl std::fmt::Debug for ArgType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ArgType::Cond(c) => write!(f, "Cond({})", pathname(c)),
+            ArgType::All(a) => write!(f, "All({})", a.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")),
+            ArgType::Diff(p1, p2) => write!(f, "Diff({}, {})", pathname(p1), pathname(p2)),
+            ArgType::Exclusive(p1, p2) => write!(f, "Exclusive({}, {})", pathname(p1), pathname(p2)),
+            ArgType::Inclusive(p1, p2) => write!(f, "Inclusive({}, {})", pathname(p1), pathname(p2)),
+        }
     }
 }
 
@@ -747,23 +743,48 @@ impl VisitMut for Subst {
 /// Note: we don't include `Type1` in `types` for the legacy format because the original stream will be copied
 /// in the generated code, so only the remaining types are required for the substitutions.
 fn parse_parameters(input: ParseStream, is_conditional: bool)
-    -> syn::parse::Result<(SubstType, Vec<Type>, AttributeFormat, bool)>
+    -> syn::parse::Result<(ArgType, Vec<Type>, AttributeFormat, bool)>
 {
-    let in_format_allowed = is_conditional || cfg!(feature = "in_format");
-    // determines the format
     let is_negated = is_conditional && input.peek(Token![!]) && input.parse::<Token![!]>().is_ok();
-    let current_type = if is_conditional {
-        SubstType::Type(input.parse::<Type>()?)
+    let args = if is_conditional {
+        ArgType::Cond(input.parse::<Type>()?)
     } else {
-        SubstType::Path(input.parse::<Path>()?)
+        // determines the format
+        let path1 = input.parse::<Path>()?;
+        if input.peek(Token![,]) && input.parse::<Token![,]>().is_ok() {
+            let mut list_args = vec![path1];
+            loop {
+                let p = input.parse::<Path>()?;
+                list_args.push(p);
+                if input.peek(Token![,]) {
+                    _ = input.parse::<Token![,]>();
+                } else {
+                    break;
+                }
+            }
+            ArgType::All(list_args)
+        } else if input.peek(Token![!]) && input.parse::<Token![!]>().is_ok() {
+            if input.peek(Token![=]) && input.parse::<Token![=]>().is_ok() {
+                ArgType::Diff(path1, input.parse::<Path>()?)
+            } else {
+                input.parse::<Token![<]>()?;
+                ArgType::Exclusive(path1, input.parse::<Path>()?)
+            }
+        } else {
+            if input.peek(Token![=]) && input.parse::<Token![=]>().is_ok() {
+                input.parse::<Token![<]>()?;
+                ArgType::Inclusive(path1, input.parse::<Path>()?)
+            } else {
+                // that something else must be '->', so we return a single "normal" argument
+                ArgType::All(vec![path1])
+            }
+        }
     };
-    let format = if is_conditional && input.parse::<Token![in]>().and(Ok(true))? ||
-        in_format_allowed && input.peek(Token![in]) && input.parse::<Token![in]>().is_ok() {
+
+    // note: legacy format not supported any more
+    let format = if is_conditional && input.parse::<Token![in]>().and(Ok(true))? {
         AttributeFormat::In
-    } else if input.peek(Token![,]) && input.parse::<Token![,]>().is_ok() {
-        AttributeFormat::Legacy
     } else {
-        // default format suggested in case of error
         input.parse::<Token![->]>()?;                           // "T -> Type1, Type2, Type3"
         AttributeFormat::Arrow
     };
@@ -772,7 +793,7 @@ fn parse_parameters(input: ParseStream, is_conditional: bool)
     let types: Vec<Type>;
     let vars = match format {
         AttributeFormat::Legacy =>
-            Punctuated::<Type, Token![,]>::parse_terminated(input)?,
+            todo!("remove"),
         AttributeFormat::In => {
             // brackets are optional:
             if input.peek(token::Bracket) {
@@ -791,18 +812,17 @@ fn parse_parameters(input: ParseStream, is_conditional: bool)
     if types.is_empty() {
         return Err(Error::new(input.span(), "expected type"));
     }
-    Ok((current_type, types, format, is_negated))
+    Ok((args, types, format, is_negated))
 }
 
 /// Attribute parser used for inner attributes
 impl Parse for AttrParams {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let (current_type, types, format, _) = parse_parameters(&input, false)?;
-        if let SubstType::Path(path) = current_type {
-            Ok(AttrParams { generic_arg: path, new_types: types, format })
-        } else {
-            panic!()    // should never happen per design
-        }
+        let (args, types, format, _) = parse_parameters(&input, false)?;
+        
+        // FIXME: temporary
+        let generic_arg = if let ArgType::All(mut v) = args { v.pop().unwrap() } else { panic!("not supported yet") };
+        Ok(AttrParams { generic_arg, new_types: types, format })
     }
 }
 
@@ -830,32 +850,26 @@ fn to_subst_types(mut types: Vec<Type>) -> (bool, Vec<SubstType>) {
 /// Attribute argument parser used for the inner conditional attributes
 impl Parse for CondParams {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (current_type, types, format, is_negated) = parse_parameters(input, true)?;
-        if !format.is_in() {
-            return Err(input.error("wrong trait_gen_if syntax"));
-        }
-        if let SubstType::Type(ty) = current_type {
-            Ok(CondParams {
-                generic_arg: ty,
-                types: types.into_iter().collect(),
-                is_negated,
-            })
-        } else {
-            panic!()    // should never happen per design
-        }
+        let (args, types, format, is_negated) = parse_parameters(input, true)?;
+        assert!(format.is_in());
+        let generic_arg = if let ArgType::Cond(t) = args { t } else { panic!("can't happen") };
+        Ok(CondParams {
+            generic_arg,
+            types: types.into_iter().collect(),
+            is_negated,
+        })
     }
 }
 
 /// Attribute argument parser used for the procedural macro being processed
 impl Parse for Subst {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (current_type, types, format, _) = parse_parameters(input, false)?;
+        let (args, types, format, _) = parse_parameters(input, false)?;
+        
+        // FIXME: temporary
+        let generic_arg = if let ArgType::All(mut v) = args { v.pop().unwrap() } else { panic!("not supported yet: {args:?}") };
         let (is_path, new_types) = to_subst_types(types);
-        if let SubstType::Path(path) = current_type {
-            Ok(Subst { generic_arg: path, new_types, format, is_path, can_subst_path: Vec::new() })
-        } else {
-            panic!()    // should never happen per design
-        }
+        Ok(Subst { generic_arg, new_types, format, is_path, can_subst_path: Vec::new() })
     }
 }
 

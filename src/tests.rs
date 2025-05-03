@@ -107,10 +107,10 @@ fn parse_args() {
         ("T ->",                        "",             false,  true,   true),
         ("[&T] -> [&mut T]",            "",             false,  false,  true),
         //
-        ("u32, i32, u8, i8",            "u32",          true,   true,   false),
-        ("T::U<V::W>, X, Y",            "T::U<V::W>",   true,   true,   false),
-        ("u32 i32",                     "",             true,   true,   true),
-        ("u32",                         "",             true,   true,   true),
+        // ("u32, i32, u8, i8",            "u32",          true,   true,   false),
+        // ("T::U<V::W>, X, Y",            "T::U<V::W>",   true,   true,   false),
+        // ("u32 i32",                     "",             true,   true,   true),
+        // ("u32",                         "",             true,   true,   true),
     ];
     let mut error = 0;
     for (idx, &(string, generic, legacy, path, parse_error)) in tests.iter().enumerate() {
@@ -209,4 +209,82 @@ fn test_path_prefix_len() {
 #[test]
 fn test_replace_str() {
     assert_eq!(replace_str("ab cd ab ef", "ab", "X"), Some("X cd X ef".to_string()));
+}
+
+mod test_parse_parameters {
+    use proc_macro2::TokenStream;
+    use std::str::FromStr;
+    use syn::parse::{Parse, ParseStream};
+    use syn::Type;
+    use crate::{parse_parameters, pathname, ArgType, AttributeFormat};
+
+    struct ArgsResult {
+        args: ArgType,
+        types: Vec<Type>,
+        format: AttributeFormat,
+        is_negated: bool,
+    }
+    
+    impl std::fmt::Debug for ArgsResult {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "ArgsResult {{ args: {:?}, types: [{}], format: {:?}, is_negated: {} }}", 
+                   self.args, 
+                   self.types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "), 
+                   self.format, 
+                   self.is_negated
+            )
+        }
+    }
+    
+    struct CondWrapper(ArgsResult);
+    
+    impl Parse for ArgsResult {
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            match parse_parameters(input, false) {
+                Ok((args, types, format, is_negated)) => Ok(ArgsResult { args, types, format, is_negated }),
+                Err(e) => Err(e),
+            }
+        }
+    }
+    
+    impl Parse for CondWrapper {
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            match parse_parameters(input, true) {
+                Ok((args, types, format, is_negated)) => Ok(CondWrapper(ArgsResult { args, types, format, is_negated })),
+                Err(e) => Err(e),
+            }
+        }
+    }
+    
+    
+    #[test]
+    fn test1() {
+        let tests = vec![
+            (false, "T -> u8, u16",           Some("ArgsResult { args: All(T), types: [u8, u16], format: Arrow, is_negated: false }")),
+            (false, "T, U -> u8, u16, u32",   Some("ArgsResult { args: All(T, U), types: [u8, u16, u32], format: Arrow, is_negated: false }")),
+            (false, "T != U -> u8, u16, u32", Some("ArgsResult { args: Diff(T, U), types: [u8, u16, u32], format: Arrow, is_negated: false }")),
+            (false, "T !< U -> u8, u16, u32", Some("ArgsResult { args: Exclusive(T, U), types: [u8, u16, u32], format: Arrow, is_negated: false }")),
+            (false, "T =< U -> u8, u16, u32", Some("ArgsResult { args: Inclusive(T, U), types: [u8, u16, u32], format: Arrow, is_negated: false }")),
+            (true, "T in u8, u16",            Some("ArgsResult { args: Cond(T), types: [u8, u16], format: In, is_negated: false }")),
+        ];
+        for (is_cond, string, expected) in tests {
+            let token_stream = TokenStream::from_str(string).expect(&format!("can't create tokens from '{string}'"));
+            let args_maybe = if is_cond {
+                match syn::parse2::<CondWrapper>(token_stream) {
+                    Ok(types) => Some(types.0),
+                    Err(_err) => None,
+                }
+            } else {
+                match syn::parse2::<ArgsResult>(token_stream) {
+                    Ok(types) => Some(types),
+                    Err(_err) => None,
+                }
+            };
+            if let Some(ref args) = args_maybe {
+                println!("{string}: {args:?}");
+            }
+            let result = args_maybe.map(|a| format!("{a:?}"));
+            assert_eq!(result, expected.map(|s| s.to_string()), "test {string} failed");
+        }
+    }
 }

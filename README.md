@@ -11,8 +11,6 @@
   * [Motivation](#motivation)
   * [Conditional Code](#conditional-code)
   * [Examples](#examples)
-  * [Legacy Format](#legacy-format)
-  * [Alternative Format](#alternative-format)
   * [IDE Code Awareness](#ide-code-awareness)
   * [Limitations](#limitations)
 * [Compatibility](#compatibility)
@@ -343,90 +341,6 @@ assert_eq!(2_u64.text(), "u64: 2");
     ```
 
 _Note: there is no escape code to avoid the substitution; if you need `${T}` for another purpose and you don't want it to be replaced, you must use `concat!` in a doc attribute to split the pattern; for example `#[doc = concat!("my ${", "T} variable")]`. Or you must choose another generic argument; for example, `U` or `my::T`._ 
-
-## Legacy Format
-
-The attribute used a shorter format in earlier versions, which is still supported even though it may be more confusing to read:
-
-```rust
-#[trait_gen(Type1, Type2, Type3)]
-impl Trait for Type1 {
-    // ...
-}
-```
-
-Here, the code is generated as is for `Type1`, and then `Type2` and `Type3` are substituted for `Type1` to generate their implementation. This is a shortcut for the equivalent attribute with the other format:
-
-```rust
-#[trait_gen(Type1 -> Type1, Type2, Type3)]
-impl Trait for Type1 {
-    // ...
-}
-```
-
-The legacy format can be used when there is no risk of collision, like in the example below. All the `Meter` types must change, and it is unlikely to be mixed up with `Foot` and `Mile`. The type to replace in the code must be the first in the argument list:
-
-```rust
-use std::ops::Add;
-use trait_gen::trait_gen;
-
-pub struct Meter(f64);
-pub struct Foot(f64);
-pub struct Mile(f64);
-
-#[trait_gen(Meter, Foot, Mile)]
-impl Add for Meter {
-    type Output = Meter;
-
-    fn add(self, rhs: Meter) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-```
-
-Be careful not to replace a type that must remain the same in all implementations! Consider the following example, in which the return type is always `u64`:
-
-```rust
-pub trait ToU64 {
-    fn into_u64(self) -> u64;   // always returns a u64
-}
-
-#[trait_gen(u64, i64, u32, i32, u16, i16, u8, i8)]
-impl ToU64 for u64 {
-    fn into_u64(self) -> u64 {  // ERROR! Replaced by i64, u32, ...
-        self as u64
-    }
-}
-```
-
-This code doesn't work because `u64` also happens to be the first type of the list. Use a different first type like `i64` or the non-legacy format instead.
-
-## Alternative Format
-
-An alternative format is also supported when the `in_format` feature is enabled:
-
-```cargo
-trait-gen = { version="1.2", features=["in_format"] }
-```
-
-**<u>Warning</u>: This feature is temporary, and there is no guarantee that it will be maintained.**
-
-Here, `in` is used instead of an arrow `->`, and the argument types must be between square brackets:
-
-```rust
-use trait_gen::trait_gen;
-
-#[trait_gen(T in [u8, u16, u32, u64, u128])]
-impl MyLog for T {
-    fn my_log2(self) -> u32 {
-        T::BITS - 1 - self.leading_zeros()
-    }
-}
-```
-
-Using this format issues 'deprecated' warnings that you can turn off by adding the `#![allow(deprecated)]` directive at the top of the file or by adding `#[allow(deprecated)]` where the generated code is used.
-
-The square brackets are optional since version 1.1: `#[trait_gen(T in u8, u16)]` is valid.
 
 ## IDE Code Awareness
 

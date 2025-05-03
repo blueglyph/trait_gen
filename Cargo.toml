@@ -1,7 +1,7 @@
 [package]
 name = "trait-gen"
 description = "Trait implementation generator macro"
-version = "1.2.0"
+version = "2.0.0"
 edition = "2021"
 rust-version = "1.61.0"
 authors = ["Redglyph"]
@@ -18,7 +18,6 @@ proc-macro = true
 
 [features]
 default = ["type_gen"]
-in_format = []
 type_gen = []
 
 [dependencies]

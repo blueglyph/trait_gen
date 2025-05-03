@@ -18,11 +18,11 @@ mod supported_formats {
 
     struct Test<T>(T);
 
-    // legacy format
-    #[trait_gen(i8, u8)]
-    impl Test<i8> {
-        fn test() -> bool { true }
-    }
+    // // legacy format
+    // #[trait_gen(i8, u8)]
+    // impl Test<i8> {
+    //     fn test() -> bool { true }
+    // }
 
     // main format
     #[trait_gen(T -> i16, u16)]
@@ -30,12 +30,12 @@ mod supported_formats {
         fn test() -> bool { true }
     }
 
-    #[cfg(feature = "in_format")]
-    // alternate format with 'in' and brackets
-    #[trait_gen(T in [i32, u32])]
-    impl Test<T> {
-        fn test() -> bool { true }
-    }
+    // #[cfg(feature = "in_format")]
+    // // alternate format with 'in' and brackets
+    // #[trait_gen(T in [i32, u32])]
+    // impl Test<T> {
+    //     fn test() -> bool { true }
+    // }
 
     // verifies that brackets can be used for types with the '->' syntax
     #[trait_gen(T -> [i64;2])]
@@ -48,12 +48,12 @@ mod supported_formats {
         fn test() -> bool { true }
     }
 
-    #[cfg(feature = "in_format")]
-    // verifies that brackets can be used for types with the 'in' syntax
-    #[trait_gen(T in [[i128;2]])]
-    impl Test<T> {
-        fn test() -> bool { true }
-    }
+    // #[cfg(feature = "in_format")]
+    // // verifies that brackets can be used for types with the 'in' syntax
+    // #[trait_gen(T in [[i128;2]])]
+    // impl Test<T> {
+    //     fn test() -> bool { true }
+    // }
 
     #[trait_gen(T -> (u32, u32), (u8, u8))]
     impl Test<T> {
@@ -63,8 +63,8 @@ mod supported_formats {
 
     #[test]
     fn test() {
-        assert!(Test::<i8>::test());
-        assert!(Test::<u8>::test());
+        // assert!(Test::<i8>::test());
+        // assert!(Test::<u8>::test());
         assert!(Test::<i16>::test());
         assert!(Test::<u16>::test());
         assert!(Test::<[i64;2]>::test());
@@ -72,14 +72,14 @@ mod supported_formats {
         assert!(Test::<(u32, u32)>::test());
     }
 
-    #[allow(deprecated)]
-    #[cfg(feature = "in_format")]
-    #[test]
-    fn test_in_format() {
-        assert!(Test::<i32>::test());
-        assert!(Test::<u32>::test());
-        assert!(Test::<[i128;2]>::test());
-    }
+    // #[allow(deprecated)]
+    // #[cfg(feature = "in_format")]
+    // #[test]
+    // fn test_in_format() {
+    //     assert!(Test::<i32>::test());
+    //     assert!(Test::<u32>::test());
+    //     assert!(Test::<[i128;2]>::test());
+    // }
 }
 
 mod conditional_code {
@@ -412,12 +412,21 @@ mod path_case_01 {
         }
     }
 
-    #[trait_gen(super::Meter<f32>, super::Foot<f32>)]
-    impl Neg for super::Meter<f32> {
-        type Output = super::Meter<f32>;
+    // #[trait_gen(super::Meter<f32>, super::Foot<f32>)]
+    // impl Neg for super::Meter<f32> {
+    //     type Output = super::Meter<f32>;
+    //
+    //     fn neg(self) -> Self::Output {
+    //         super::Meter::<f32>(-self.0)
+    //     }
+    // }
+
+    #[trait_gen(U -> super::Meter<f32>, super::Foot<f32>)]
+    impl Neg for U {
+        type Output = U;
 
         fn neg(self) -> Self::Output {
-            super::Meter::<f32>(-self.0)
+            U(-self.0)
         }
     }
 
@@ -1079,115 +1088,115 @@ mod ex04 {
     }
 }
 
-// =============================================================================
-// "Legacy" format:
+// // =============================================================================
+// // "Legacy" format:
+// //
+// //     type T = Meter;
+// //     #[trait_gen(T, Foot, Mile)]
+// // or
+// //     #[trait_gen(Meter, Foot, Mile)]
+// // -----------------------------------------------------------------------------
+//
+// mod ex01b {
+//     use std::ops::Add;
+//     use trait_gen::trait_gen;
+//
+//     #[derive(Clone, Copy)]
+//     /// Length in meter
+//     struct Meter(f64);
+//
+//     #[derive(Clone, Copy)]
+//     /// Length in foot
+//     struct Foot(f64);
+//
+//     #[derive(Clone, Copy)]
+//     /// Length in miles
+//     struct Mile(f64);
 //
 //     type T = Meter;
+//
 //     #[trait_gen(T, Foot, Mile)]
-// or
-//     #[trait_gen(Meter, Foot, Mile)]
-// -----------------------------------------------------------------------------
-
-mod ex01b {
-    use std::ops::Add;
-    use trait_gen::trait_gen;
-
-    #[derive(Clone, Copy)]
-    /// Length in meter
-    struct Meter(f64);
-
-    #[derive(Clone, Copy)]
-    /// Length in foot
-    struct Foot(f64);
-
-    #[derive(Clone, Copy)]
-    /// Length in miles
-    struct Mile(f64);
-
-    type T = Meter;
-
-    #[trait_gen(T, Foot, Mile)]
-    impl Add for T {
-        type Output = T;
-
-        fn add(self, rhs: T) -> Self::Output {
-            // The first type identifier, here 'T', must not be redefined by a generic because the
-            // macro doesn't handle scopes.
-            //
-            // Uncomment the code below to see the error:
-            // --------------------------------
-            // fn fake<T: Sized>(_x: T) {
-            //     println!("x-x");
-            // }
-            // fake(1_u32);
-            // --------------------------------
-
-            let _zero = T::default();
-
-            // Note that it is not possible to use a type alias to instantiate an object, so here
-            // we use `Self( ... )` and not `T( ... )`. The intermediate `result` variable is
-            // optional and is only there to test the type substitution:
-
-            let result: T = Self(self.0 + rhs.0);
-            result
-        }
-    }
-
-    // Usage of `Self(value)` since an alias cannot be used as constructor:
-    #[trait_gen(T, Foot, Mile)]
-    impl Default for T {
-        fn default() -> Self {
-            Self(0.0)
-        }
-    }
-
-    #[test]
-    fn test_original_type() {
-        let a_m = Meter(1.0);
-        let b_m = Meter(2.0);
-        let c_m = a_m + b_m + Meter::default();
-        assert_eq!(c_m.0, 3.0);
-    }
-
-    #[test]
-    fn test_generated_types() {
-        let a_ft = Foot(1.0);
-        let b_ft = Foot(2.0);
-        let c_ft = a_ft + b_ft + Foot::default();
-        assert_eq!(c_ft.0, 3.0);
-
-        let a_mi = Mile(1.0);
-        let b_mi = Mile(2.0);
-        let c_mi = a_mi + b_mi + Mile::default();
-        assert_eq!(c_mi.0, 3.0);
-    }
-}
-
-mod ex02b {
-    use trait_gen::trait_gen;
-
-    trait AddMod {
-        fn add_mod(self, other: Self, m: Self) -> Self;
-    }
-
-    // No need to use `type T = u32` in such a simple case:
-    #[trait_gen(u32, i32, u64, i64, f32, f64)]
-    impl AddMod for u32 {
-        fn add_mod(self, other: Self, m: Self) -> Self {
-            (self + other) % m
-        }
-    }
-
-    #[test]
-    fn test_add_mod() {
-        assert_eq!(10_u32.add_mod(5, 8), 7);
-        assert_eq!(10_i32.add_mod(5, 8), 7);
-        assert_eq!(10_u64.add_mod(5, 8), 7);
-        assert_eq!(10_i64.add_mod(5, 8), 7);
-        assert_eq!(10_f32.add_mod(5.0, 8.0), 7.0);
-        assert_eq!(10_f64.add_mod(5.0, 8.0), 7.0);
-    }
-}
+//     impl Add for T {
+//         type Output = T;
+//
+//         fn add(self, rhs: T) -> Self::Output {
+//             // The first type identifier, here 'T', must not be redefined by a generic because the
+//             // macro doesn't handle scopes.
+//             //
+//             // Uncomment the code below to see the error:
+//             // --------------------------------
+//             // fn fake<T: Sized>(_x: T) {
+//             //     println!("x-x");
+//             // }
+//             // fake(1_u32);
+//             // --------------------------------
+//
+//             let _zero = T::default();
+//
+//             // Note that it is not possible to use a type alias to instantiate an object, so here
+//             // we use `Self( ... )` and not `T( ... )`. The intermediate `result` variable is
+//             // optional and is only there to test the type substitution:
+//
+//             let result: T = Self(self.0 + rhs.0);
+//             result
+//         }
+//     }
+//
+//     // Usage of `Self(value)` since an alias cannot be used as constructor:
+//     #[trait_gen(T, Foot, Mile)]
+//     impl Default for T {
+//         fn default() -> Self {
+//             Self(0.0)
+//         }
+//     }
+//
+//     #[test]
+//     fn test_original_type() {
+//         let a_m = Meter(1.0);
+//         let b_m = Meter(2.0);
+//         let c_m = a_m + b_m + Meter::default();
+//         assert_eq!(c_m.0, 3.0);
+//     }
+//
+//     #[test]
+//     fn test_generated_types() {
+//         let a_ft = Foot(1.0);
+//         let b_ft = Foot(2.0);
+//         let c_ft = a_ft + b_ft + Foot::default();
+//         assert_eq!(c_ft.0, 3.0);
+//
+//         let a_mi = Mile(1.0);
+//         let b_mi = Mile(2.0);
+//         let c_mi = a_mi + b_mi + Mile::default();
+//         assert_eq!(c_mi.0, 3.0);
+//     }
+// }
+//
+// mod ex02b {
+//     use trait_gen::trait_gen;
+//
+//     trait AddMod {
+//         fn add_mod(self, other: Self, m: Self) -> Self;
+//     }
+//
+//     // No need to use `type T = u32` in such a simple case:
+//     #[trait_gen(u32, i32, u64, i64, f32, f64)]
+//     impl AddMod for u32 {
+//         fn add_mod(self, other: Self, m: Self) -> Self {
+//             (self + other) % m
+//         }
+//     }
+//
+//     #[test]
+//     fn test_add_mod() {
+//         assert_eq!(10_u32.add_mod(5, 8), 7);
+//         assert_eq!(10_i32.add_mod(5, 8), 7);
+//         assert_eq!(10_u64.add_mod(5, 8), 7);
+//         assert_eq!(10_i64.add_mod(5, 8), 7);
+//         assert_eq!(10_f32.add_mod(5.0, 8.0), 7.0);
+//         assert_eq!(10_f64.add_mod(5.0, 8.0), 7.0);
+//     }
+// }
 
 mod ex03b {
     use trait_gen::trait_gen;
@@ -1205,9 +1214,9 @@ mod ex03b {
     //     }
     // }
 
-    type T = u64;
+    // type T = u64;
     
-    #[trait_gen(T, i64, u32, i32, u16, i16, u8, i8)]
+    #[trait_gen(T -> u64, i64, u32, i32, u16, i16, u8, i8)]
     impl ToU64 for T {
         /// Transforms the value into a `u64` type
         fn into_u64(self) -> u64 {
