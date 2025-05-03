@@ -464,7 +464,7 @@ IDEs like RustRover and IntelliJ/CLion with the Rust plugin all "understand" pro
 
 # Compatibility
 
-The `trait-gen` crate is tested for rustc **1.58.0** and newer on Windows 64-bit and Linux 64/32-bit platforms.
+The `trait-gen` crate is tested for rustc **1.61.0** and newer on Windows 64-bit and Linux 64/32-bit platforms.
 
 # Releases
 
