@@ -182,7 +182,7 @@
 mod tests;
 
 use std::collections::HashSet;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use proc_macro::TokenStream;
 use proc_macro2::{Punct, Spacing};
 use proc_macro_error::{proc_macro_error, abort};
@@ -219,7 +219,7 @@ const TRAIT_GEN_IF: &str = "trait_gen_if";
 const TYPE_GEN_IF: &str = if cfg!(feature = "type_gen") { "type_gen_if" } else { TRAIT_GEN_IF };
 
 //==============================================================================
-// Main substitution types and their trait implementations
+// Misc types and their implementations
 
 #[derive(Clone, PartialEq)]
 /// Substitution item, either a Path (`super::Type`) or a Type (`&mut Type`)
@@ -237,30 +237,12 @@ impl ToTokens for SubstType {
     }
 }
 
-impl std::fmt::Debug for SubstType {
+impl Debug for SubstType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             SubstType::Path(p) => write!(f, "Path({})", pathname(p)),
             SubstType::Type(t) => write!(f, "Type({})", pathname(t)),
         }
-    }
-}
-
-#[derive(Clone, PartialEq, Debug)]
-/// Attribute format used in the original source code.
-enum AttributeFormat {
-    Arrow,      // #[trait_gen(T -> T1, T2, T3)]    impl Trait for T {...}
-    Legacy,     // #[trait_gen(T1, T2, T3)]         impl Trait for T1 {...}
-    In          // #[trait_gen(T in [T1, T2, T3])]  impl Trait for T {...}
-}
-
-impl AttributeFormat {
-    fn is_legacy(&self) -> bool {
-        self == &AttributeFormat::Legacy
-    }
-
-    fn is_in(&self) -> bool {
-        self == &AttributeFormat::In
     }
 }
 
@@ -346,7 +328,7 @@ impl ToTokens for ArgType {
     }
 }
 
-impl std::fmt::Debug for ArgType {
+impl Debug for ArgType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ArgType::None => write!(f, "None"),
@@ -359,18 +341,39 @@ impl std::fmt::Debug for ArgType {
     }
 }
 
+/// This type is only used to implement the VisitMut trait.
+struct TurboFish;
+
+/// Adds the turbofish double-colon whenever possible to avoid post-substitution problems.
+///
+/// The replaced part may be an expression requiring it, or a type that doesn't require the
+/// double-colon but accepts it. Handling both cases would be complicated so we always include it.
+impl VisitMut for TurboFish {
+    fn visit_path_mut(&mut self, node: &mut Path) {
+        if VERBOSE_TF {
+            println!("TURBOF: path '{}'", pathname(node));
+        }
+        for segment in &mut node.segments {
+            if let PathArguments::AngleBracketed(generic_args) = &mut segment.arguments {
+                generic_args.colon2_token = Some(PathSep::default());
+            }
+        }
+    }
+}
+
+//==============================================================================
+// Main substitution types (VisitMut/Parse implementations defined further down)
+
 #[derive(Clone, Debug)]
-/// Attribute data parsed from the outer macro.
+/// Attribute data used to substitute arguments in inner `trait_gen`/`type_gen` attributes
 struct TraitGen {
     /// generic arguments
     args: ArgType,
     /// types that replace the generic argument
     types: Vec<Type>,
-    /// format
-    format: AttributeFormat,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 /// Attribute substitution data used to replace the generic argument in `generic_arg` with the
 /// types in `new_types`.
 struct Subst {
@@ -378,26 +381,13 @@ struct Subst {
     generic_arg: Path,
     /// types that replace the generic argument
     types: Vec<SubstType>,
-    /// format
-    format: AttributeFormat,
     /// Path substitution items if true, Type items if false
     is_path: bool,
     /// Context stack, cannot substitue paths when last is false (can substitute if empty)
     can_subst_path: Vec<bool>,
 }
 
-#[derive(Clone, Debug)]
-/// Attribute data used to substitute arguments in inner `trait_gen`/`type_gen` attributes
-struct AttrParams {
-    /// generic argument to replace
-    args: ArgType,
-    /// types that replace the generic argument
-    new_types: Vec<Type>,
-    /// format
-    format: AttributeFormat,
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 /// Attribute data used in `trait_gen_if`/`type_gen_if` conditionals. We store the generic
 /// argument and the types as [String], to make the comparison easier.
 struct CondParams {
@@ -415,7 +405,6 @@ impl Subst {
         Subst {
             generic_arg,
             types,
-            format: attribute.format,
             is_path,
             can_subst_path: vec![],
         }
@@ -437,12 +426,11 @@ impl Subst {
     }
 }
 
-impl Display for Subst {
+impl Debug for Subst {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PathTypes {{ generic_arg: {}, types: [{}], format: {:?}, is_path: {}, enabled: {} }}",
+        write!(f, "PathTypes {{ generic_arg: {}, types: [{}], is_path: {}, enabled: {} }}",
                pathname(&self.generic_arg),
                self.types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
-               self.format,
                self.is_path,
                self.can_subst_path.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
         )
@@ -619,17 +607,15 @@ impl VisitMut for Subst {
                     // #[trait_gen(U -> i32, u32)]     // <== self
                     // #[trait_gen(T -> &U, &mut U)]   // <== change 'U' to 'i32' and 'u32'
                     // impl Neg for T { /* .... */ }
-                    match node.parse_args::<AttrParams>() {
+                    match node.parse_args::<TraitGen>() {
                         Ok(mut types) => {
                             let mut output = proc_macro2::TokenStream::new();
                             // It would be nice to give a warning if the format of the attributes were different,
                             // once there is a way to generate custom warnings (an error for that seems too harsh).
-                            if !types.format.is_legacy() {
-                                let g = types.args;
-                                output.extend(quote!(#g -> ));
-                            }
+                            let g = types.args;
+                            output.extend(quote!(#g -> ));
                             let mut first = true;
-                            for ty in &mut types.new_types {
+                            for ty in &mut types.types {
                                 // checks if substitutions must be made in that argument:
                                 self.visit_type_mut(ty);
                                 if !first {
@@ -843,13 +829,13 @@ impl VisitMut for Subst {
 /// Note: we don't include `Type1` in `types` for the legacy format because the original stream will be copied
 /// in the generated code, so only the remaining types are required for the substitutions.
 fn parse_parameters(input: ParseStream, is_conditional: bool)
-    -> syn::parse::Result<(ArgType, Vec<Type>, AttributeFormat, bool)>
+    -> syn::parse::Result<(ArgType, Vec<Type>, bool)>
 {
     let is_negated = is_conditional && input.peek(Token![!]) && input.parse::<Token![!]>().is_ok();
     let args = if is_conditional {
         ArgType::Cond(input.parse::<Type>()?)
     } else {
-        // determines the format
+        // determines the format of the left-hand arguments
         let path1 = input.parse::<Path>()?;
         if input.peek(Token![,]) && input.parse::<Token![,]>().is_ok() {
             let mut list_args = vec![path1];
@@ -881,53 +867,46 @@ fn parse_parameters(input: ParseStream, is_conditional: bool)
         }
     };
 
-    // note: legacy format not supported any more
-    let format = if is_conditional && input.parse::<Token![in]>().and(Ok(true))? {
-        AttributeFormat::In
+    if is_conditional {
+        input.parse::<Token![in]>()?;
     } else {
-        input.parse::<Token![->]>()?;                           // "T -> Type1, Type2, Type3"
-        AttributeFormat::Arrow
-    };
+        input.parse::<Token![->]>()?;
+    }
 
-    // collects the other arguments depending on format
+    // collects the right-hand arguments depending on format
     let types: Vec<Type>;
-    let vars = match format {
-        AttributeFormat::Legacy =>
-            todo!("remove"),
-        AttributeFormat::In => {
-            // brackets are optional:
-            if input.peek(token::Bracket) {
-                let content;
-                bracketed!(content in input);
-                let inner_vars: ParseStream = &content.into();
-                Punctuated::<Type, Token![,]>::parse_terminated(&inner_vars)?
-            } else {
-                Punctuated::<Type, Token![,]>::parse_terminated(input)?
-            }
+    let vars = if is_conditional {
+        // brackets are optional:
+        if input.peek(token::Bracket) {
+            let content;
+            bracketed!(content in input);
+            let inner_vars: ParseStream = &content.into();
+            Punctuated::<Type, Token![,]>::parse_terminated(&inner_vars)?
+        } else {
+            Punctuated::<Type, Token![,]>::parse_terminated(input)?
         }
-        AttributeFormat::Arrow =>
-            Punctuated::<Type, Token![,]>::parse_terminated(input)?,
+    } else {
+        Punctuated::<Type, Token![,]>::parse_terminated(input)?
     };
     types = vars.into_iter().collect();
     if types.is_empty() {
         return Err(Error::new(input.span(), "expected type"));
     }
-    Ok((args, types, format, is_negated))
+    Ok((args, types, is_negated))
 }
 
-/// Attribute parser used for inner attributes
-impl Parse for AttrParams {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let (args, types, format, _) = parse_parameters(&input, false)?;
-        Ok(AttrParams { args, new_types: types, format })
+/// Attribute argument parser used for the procedural macro being processed
+impl Parse for TraitGen {
+    fn parse(input: ParseStream) -> syn::parse::Result<Self> {
+        let (args, types, _) = parse_parameters(input, false)?;
+        Ok(TraitGen { args, types })
     }
 }
 
 /// Attribute argument parser used for the inner conditional attributes
 impl Parse for CondParams {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (args, types, format, is_negated) = parse_parameters(input, true)?;
-        assert!(format.is_in());
+        let (args, types, is_negated) = parse_parameters(input, true)?;
         let generic_arg = if let ArgType::Cond(t) = args { t } else { panic!("can't happen") };
         Ok(CondParams {
             generic_arg,
@@ -937,37 +916,8 @@ impl Parse for CondParams {
     }
 }
 
-/// Attribute argument parser used for the procedural macro being processed
-impl Parse for TraitGen {
-    fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let (args, types, format, _) = parse_parameters(input, false)?;
-        Ok(TraitGen { args, types, format })
-    }
-}
-
-//------------------------------------------------------------------------------
-
-// This type is only used to implement the VisitMut trait.
-struct TurboFish;
-
-/// Adds the turbofish double-colon whenever possible to avoid post-substitution problems.
-///
-/// The replaced part may be an expression requiring it, or a type that doesn't require the
-/// double-colon but accepts it. Handling both cases would be complicated so we always include it.
-impl VisitMut for TurboFish {
-    fn visit_path_mut(&mut self, node: &mut Path) {
-        if VERBOSE_TF {
-            println!("TURBOF: path '{}'", pathname(node));
-        }
-        for segment in &mut node.segments {
-            if let PathArguments::AngleBracketed(generic_args) = &mut segment.arguments {
-                generic_args.colon2_token = Some(PathSep::default());
-            }
-        }
-    }
-}
-
 //==============================================================================
+// Procedural macros
 
 fn substitute(item: TokenStream, mut types: Subst) -> TokenStream {
     if VERBOSE || VERBOSE_TF {
@@ -979,22 +929,7 @@ fn substitute(item: TokenStream, mut types: Subst) -> TokenStream {
         )
     }
     if VERBOSE || VERBOSE_TF { println!("\n{}\n{}", item, "-".repeat(80)); }
-    let mut output = match types.format {
-        AttributeFormat::Arrow =>
-            TokenStream::new(),
-        AttributeFormat::Legacy =>
-            item.clone(),
-        AttributeFormat::In => {
-            let message = format!(
-                "Use of deprecated format '{} in [{}]' in #[trait_gen] macro",
-                pathname(&types.generic_arg),
-                &types.types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
-            );
-            // no way to generate warnings in Rust
-            if VERBOSE || VERBOSE_TF { println!("{}\nWARNING: \n{}", "=".repeat(80), message); }
-            TokenStream::from(quote!(#[deprecated = #message]))
-        }
-    };
+    let mut output = TokenStream::new();
     let ast: File = syn::parse(item).unwrap();
     while !types.types.is_empty() {
         let mut modified_ast = ast.clone();

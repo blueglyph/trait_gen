@@ -18,7 +18,6 @@ fn annotate_error(text: &str, msg: &str, span: Span) -> String {
     msg.push('\n');
     let start = span.start().column;
     let end = span.end().column;
-    // println!("start={start}, end={end}");
     if start > 0 || end > 0 {
         msg.push_str(&" ".repeat(start));
     } else {
@@ -91,23 +90,18 @@ macro_rules! parse_str {
 
 #[test]
 fn parse_args() {
-    let tests: &[(&str, &str, bool, bool, bool)] = &[
-        // parameters                   generic         legacy  path    error
-        ("T -> i32, u32",               "T",            false,  true,   false),
-        ("my::U -> my::T<u32>",         "my::U",        false,  true,   false),
-        ("T -> Box<X>",                 "T",            false,  true,   false),
-        ("T -> Box<X>, &X, &mut X",     "T",            false,  false,  false),
-        ("T::U<V::W> -> X, Y",          "T::U<V::W>",   false,  true,   false),
-        ("T ->",                        "",             false,  true,   true),
-        ("[&T] -> [&mut T]",            "",             false,  false,  true),
-        //
-        // ("u32, i32, u8, i8",            "u32",          true,   true,   false),
-        // ("T::U<V::W>, X, Y",            "T::U<V::W>",   true,   true,   false),
-        // ("u32 i32",                     "",             true,   true,   true),
-        // ("u32",                         "",             true,   true,   true),
+    let tests: &[(&str, &str, bool, bool)] = &[
+        // parameters                   generic         path    error
+        ("T -> i32, u32",               "T",            true,   false),
+        ("my::U -> my::T<u32>",         "my::U",        true,   false),
+        ("T -> Box<X>",                 "T",            true,   false),
+        ("T -> Box<X>, &X, &mut X",     "T",            false,  false),
+        ("T::U<V::W> -> X, Y",          "T::U<V::W>",   true,   false),
+        ("T ->",                        "",             true,   true),
+        ("[&T] -> [&mut T]",            "",             false,  true),
     ];
     let mut error = 0;
-    for (idx, &(string, generic, legacy, path, parse_error)) in tests.iter().enumerate() {
+    for (idx, &(string, generic, path, parse_error)) in tests.iter().enumerate() {
         let report = format!("test #{idx} on '{string}': ");
         let stream = tokenstream!(string, error);
         // tests Subst::parse
@@ -119,8 +113,6 @@ fn parse_args() {
                         println!("{report}expecting parse error"),
                     _ if pathname(&subst.args) != generic =>
                         println!("{report}expecting generic '{}' instead of '{}'", generic, pathname(&subst.args)),
-                    _ if subst.format.is_legacy() != legacy =>
-                        println!("{report}expecting {}legacy", if legacy { "" } else { "non-" }),
                     _ if subst.types.iter().all(|ty| matches!(ty, Type::Path(_))) != path =>
                         println!("{report}expecting {} mode", if path { "path" } else { "type" }),
                     _ => new_error = false
@@ -135,27 +127,22 @@ fn parse_args() {
             }
         }
         if !new_error {
-            // tests AttrParams::parse
+            // tests TraitGen::parse
             new_error = true;
-            // syn v2 doesn't include parentheses any more, removed that part:
-            // let pstring = format!("({string})");
-            // let stream = tokenstream!(&pstring, error);
             let stream = tokenstream!(&string, error);
-            match try_parse::<AttrParams>(stream, &string) {
+            match try_parse::<TraitGen>(stream, &string) {
                 Ok(params) => {
                     match () {
                         _ if parse_error =>
                             println!("{report}expecting parse error"),
                         _ if pathname(&params.args) != generic =>
                             println!("{report}expecting generic '{}' instead of '{}'", generic, pathname(&params.args)),
-                        _ if params.format.is_legacy() != legacy =>
-                            println!("{report}expecting {}legacy", if legacy { "" } else { "non-" }),
                         _ => new_error = false
                     }
                 }
                 Err(e) => {
                     if !parse_error {
-                        println!("{report}parse error (AttrParams):\n{e}");
+                        println!("{report}parse error (TraitGen):\n{e}");
                     } else {
                         new_error = false;
                     }
@@ -210,21 +197,19 @@ mod test_parse_parameters {
     use std::str::FromStr;
     use syn::parse::{Parse, ParseStream};
     use syn::Type;
-    use crate::{parse_parameters, pathname, ArgType, AttributeFormat};
+    use crate::{parse_parameters, pathname, ArgType};
 
     struct ArgsResult {
         args: ArgType,
         types: Vec<Type>,
-        format: AttributeFormat,
         is_negated: bool,
     }
     
     impl std::fmt::Debug for ArgsResult {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "ArgsResult {{ args: {:?}, types: [{}], format: {:?}, is_negated: {} }}", 
+            write!(f, "ArgsResult {{ args: {:?}, types: [{}], is_negated: {} }}", 
                    self.args, 
                    self.types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "), 
-                   self.format, 
                    self.is_negated
             )
         }
@@ -235,7 +220,7 @@ mod test_parse_parameters {
     impl Parse for ArgsResult {
         fn parse(input: ParseStream) -> syn::Result<Self> {
             match parse_parameters(input, false) {
-                Ok((args, types, format, is_negated)) => Ok(ArgsResult { args, types, format, is_negated }),
+                Ok((args, types, is_negated)) => Ok(ArgsResult { args, types, is_negated }),
                 Err(e) => Err(e),
             }
         }
@@ -244,7 +229,7 @@ mod test_parse_parameters {
     impl Parse for CondWrapper {
         fn parse(input: ParseStream) -> syn::Result<Self> {
             match parse_parameters(input, true) {
-                Ok((args, types, format, is_negated)) => Ok(CondWrapper(ArgsResult { args, types, format, is_negated })),
+                Ok((args, types, is_negated)) => Ok(CondWrapper(ArgsResult { args, types, is_negated })),
                 Err(e) => Err(e),
             }
         }
@@ -255,12 +240,12 @@ mod test_parse_parameters {
     fn test1() {
         const VERBOSE: bool = false;
         let tests = vec![
-            (false, "T -> u8, u16",           Some("ArgsResult { args: All(T), types: [u8, u16], format: Arrow, is_negated: false }")),
-            (false, "T, U -> u8, u16, u32",   Some("ArgsResult { args: All(T, U), types: [u8, u16, u32], format: Arrow, is_negated: false }")),
-            (false, "T != U -> u8, u16, u32", Some("ArgsResult { args: Diff(T, U), types: [u8, u16, u32], format: Arrow, is_negated: false }")),
-            (false, "T !< U -> u8, u16, u32", Some("ArgsResult { args: Exclusive(T, U), types: [u8, u16, u32], format: Arrow, is_negated: false }")),
-            (false, "T =< U -> u8, u16, u32", Some("ArgsResult { args: Inclusive(T, U), types: [u8, u16, u32], format: Arrow, is_negated: false }")),
-            (true, "T in u8, u16",            Some("ArgsResult { args: Cond(T), types: [u8, u16], format: In, is_negated: false }")),
+            (false, "T -> u8, u16",           Some("ArgsResult { args: All(T), types: [u8, u16], is_negated: false }")),
+            (false, "T, U -> u8, u16, u32",   Some("ArgsResult { args: All(T, U), types: [u8, u16, u32], is_negated: false }")),
+            (false, "T != U -> u8, u16, u32", Some("ArgsResult { args: Diff(T, U), types: [u8, u16, u32], is_negated: false }")),
+            (false, "T !< U -> u8, u16, u32", Some("ArgsResult { args: Exclusive(T, U), types: [u8, u16, u32], is_negated: false }")),
+            (false, "T =< U -> u8, u16, u32", Some("ArgsResult { args: Inclusive(T, U), types: [u8, u16, u32], is_negated: false }")),
+            (true, "T in u8, u16",            Some("ArgsResult { args: Cond(T), types: [u8, u16], is_negated: false }")),
         ];
         for (is_cond, string, expected) in tests {
             let token_stream = TokenStream::from_str(string).expect(&format!("can't create tokens from '{string}'"));
