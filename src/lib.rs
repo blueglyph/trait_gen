@@ -184,8 +184,9 @@ mod tests;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use proc_macro::TokenStream;
+use proc_macro2::{Punct, Spacing};
 use proc_macro_error::{proc_macro_error, abort};
-use quote::{quote, ToTokens};
+use quote::{quote, ToTokens, TokenStreamExt};
 use syn::{Generics, GenericParam, Token, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, Error, bracketed, MetaList, token};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
@@ -220,7 +221,7 @@ const TYPE_GEN_IF: &str = if cfg!(feature = "type_gen") { "type_gen_if" } else {
 //==============================================================================
 // Main substitution types and their trait implementations
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 /// Substitution item, either a Path (`super::Type`) or a Type (`&mut Type`)
 enum SubstType {
     Path(Path),
@@ -245,7 +246,7 @@ impl std::fmt::Debug for SubstType {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 /// Attribute format used in the original source code.
 enum AttributeFormat {
     Arrow,      // #[trait_gen(T -> T1, T2, T3)]    impl Trait for T {...}
@@ -263,11 +264,18 @@ impl AttributeFormat {
     }
 }
 
-/// Advanced formats
+#[derive(Clone, Default)]
+/// Variants of attribute left-hand-side arguments.
 enum ArgType {
+    #[default] None,
+    /// Conditional argument. Must be a general `Type` because it's interchangeable with the right-hand side
+    /// types. When this attribute is processed by `#[trait_gen]`, it's replaced by a type.
+    ///
     /// - `#[trait_gen_if(T in U)`
     Cond(Type),
-    /// All combinations (can have more than 2 arguments)
+    /// List of arguments from which all combinations in a list are generated (can have more than 2 arguments).
+    ///
+    /// Example:
     /// - `#[trait_gen(T -> u8, u16)]`
     ///
     ///   (T) = (u8), (u16)
@@ -276,29 +284,72 @@ enum ArgType {
     ///   (T, U) = (u8, u8), (u8, u16), (u8, u32), (u16, u8), (u16, u16), (u16, u32) , ...
     ///
     All(Vec<Path>),
-    /// All combinations of 2 different arguments
+    /// Pair of arguments from which all combinations of different positions in a list (2-permutations) are generated.
     ///
+    /// The types themselves are not verified, so if the same type is present multiple times in the list,
+    /// instances where the two arguments have the same type will be generated.
+    ///
+    /// Example:
     /// - `#[trait_gen(T != U -> u8, u16, u32)]`
     ///
     ///   (T, U) = (u8, u16), (u8, u32), (u16, u8), (u16, u32), (u32, u8), (u32, u16)
     Diff(Path, Path),
-    /// All combinations of 2 arguments where 1st's items are exclusively earlier in the list than the 2nd's
+    /// Pair of arguments from which all combinations in a list are generated, where
+    /// - the two positions in the list are different
+    /// - the position of the first argument is lower than the position of the second
+    /// A typical use is when you can safely combine integers with fewer bits into an integer with more bits
+    /// but not the other way around.
     ///
+    /// Example:
     /// - `#[trait_gen(T !< U -> u8, u16, u32)]`
     ///
     ///   (T, U) = (u8, u16), (u8, u32), (u16, u32)
     Exclusive(Path, Path),
-    /// All combinations of 2 arguments where 1st's items are inclusively earlier in the list than the 2nd's
+    /// Pair of arguments from which all combinations in a list are generated, where
+    /// - the two positions in the list are different
+    /// - the position of the first argument is lower than or equal to the position of the second
+    /// A typical use is when you can safely convert an integer with fewer bits to an integer with
+    /// at least as many bits but not the other way around.
     ///
+    /// Example:
     /// - `#[trait_gen(T =< U -> u8, u16, u32)]`
     ///
     ///   (T, U) = (u8, u8), (u8, u16), (u8, u32), (u16, u16), (u16, u32), (u32, u32)
     Inclusive(Path, Path),
 }
 
+impl ToTokens for ArgType {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match self {
+            ArgType::None => {}
+            ArgType::Cond(ty) => ty.to_tokens(tokens),
+            ArgType::All(paths) => tokens.append_separated(paths, Punct::new(',', Spacing::Alone)),
+            ArgType::Diff(path1, path2) => {
+                path1.to_tokens(tokens);
+                tokens.append(Punct::new('!', Spacing::Joint));
+                tokens.append(Punct::new('=', Spacing::Alone));
+                path2.to_tokens(tokens);
+            }
+            ArgType::Exclusive(path1, path2) => {
+                path1.to_tokens(tokens);
+                tokens.append(Punct::new('!', Spacing::Joint));
+                tokens.append(Punct::new('<', Spacing::Alone));
+                path2.to_tokens(tokens);
+            }
+            ArgType::Inclusive(path1, path2) => {
+                path1.to_tokens(tokens);
+                tokens.append(Punct::new('=', Spacing::Joint));
+                tokens.append(Punct::new('<', Spacing::Alone));
+                path2.to_tokens(tokens);
+            }
+        }
+    }
+}
+
 impl std::fmt::Debug for ArgType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            ArgType::None => write!(f, "None"),
             ArgType::Cond(c) => write!(f, "Cond({})", pathname(c)),
             ArgType::All(a) => write!(f, "All({})", a.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")),
             ArgType::Diff(p1, p2) => write!(f, "Diff({}, {})", pathname(p1), pathname(p2)),
@@ -308,14 +359,25 @@ impl std::fmt::Debug for ArgType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
+/// Attribute data parsed from the outer macro.
+struct TraitGen {
+    /// generic arguments
+    args: ArgType,
+    /// types that replace the generic argument
+    types: Vec<Type>,
+    /// format
+    format: AttributeFormat,
+}
+
+#[derive(Clone, Debug)]
 /// Attribute substitution data used to replace the generic argument in `generic_arg` with the
 /// types in `new_types`.
 struct Subst {
     /// generic argument to replace
     generic_arg: Path,
     /// types that replace the generic argument
-    new_types: Vec<SubstType>,
+    types: Vec<SubstType>,
     /// format
     format: AttributeFormat,
     /// Path substitution items if true, Type items if false
@@ -324,18 +386,18 @@ struct Subst {
     can_subst_path: Vec<bool>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 /// Attribute data used to substitute arguments in inner `trait_gen`/`type_gen` attributes
 struct AttrParams {
     /// generic argument to replace
-    generic_arg: Path,
+    args: ArgType,
     /// types that replace the generic argument
     new_types: Vec<Type>,
     /// format
     format: AttributeFormat,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 /// Attribute data used in `trait_gen_if`/`type_gen_if` conditionals. We store the generic
 /// argument and the types as [String], to make the comparison easier.
 struct CondParams {
@@ -348,6 +410,17 @@ struct CondParams {
 }
 
 impl Subst {
+    fn from_trait_gen(attribute: TraitGen, generic_arg: Path) -> Self {
+        let (is_path, types) = to_subst_types(attribute.types);
+        Subst {
+            generic_arg,
+            types,
+            format: attribute.format,
+            is_path,
+            can_subst_path: vec![],
+        }
+    }
+
     fn can_subst_path(&self) -> bool {
         *self.can_subst_path.last().unwrap_or(&true)
     }
@@ -356,7 +429,7 @@ impl Subst {
     fn get_example_types(&self) -> String {
         // This is called for error messages, which happen only during the first visit_mut pass over
         // the inner attributes: we know that Subst still has all the types in `self.new_types`.
-        let mut examples = self.new_types.iter().map(|t| pathname(t)).take(3).collect::<Vec<_>>();
+        let mut examples = self.types.iter().map(|t| pathname(t)).take(3).collect::<Vec<_>>();
         while examples.len() < 3 {
             examples.push(format!("Type{}", examples.len() + 1));
         }
@@ -366,10 +439,11 @@ impl Subst {
 
 impl Display for Subst {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PathTypes {{\n  current_type: {}\n  new_types: {}\n  format: {:?}\n  enabled:  {}\n}}",
+        write!(f, "PathTypes {{ generic_arg: {}, types: [{}], format: {:?}, is_path: {}, enabled: {} }}",
                pathname(&self.generic_arg),
-               self.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
+               self.types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
                self.format,
+               self.is_path,
                self.can_subst_path.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
         )
     }
@@ -463,12 +537,38 @@ fn replace_str(string: &str, pat: &str, repl: &str) -> Option<String> {
     }
 }
 
+/// Converts a list of `Type` to a list of `SubstType`, making them all `Path` if possible,
+/// otherwise all `Type`.
+fn to_subst_types(mut types: Vec<Type>) -> (bool, Vec<SubstType>) {
+    let mut visitor = TurboFish;
+    for ty in types.iter_mut() {
+        visitor.visit_type_mut(ty);
+    }
+    let is_path = types.iter().all(|ty| matches!(ty, Type::Path(_)));
+    let subst_types = types.into_iter()
+        .map(|ty|
+            if is_path {
+                if let Type::Path(p) = ty {
+                    SubstType::Path(p.path)
+                } else {
+                    panic!("this should match Type::Path: {:?}", ty)
+                }
+            } else {
+                SubstType::Type(ty)
+            })
+        .collect::<Vec<_>>();
+    (is_path, subst_types)
+}
+
 //==============================================================================
 // Main substitution code
 
 impl VisitMut for Subst {
     fn visit_attribute_mut(&mut self, node: &mut Attribute) {
-        if let Some(PathSegment { ident, .. }) = node.path().segments.first() {
+        // Takes the last segment in case there's a specific path to the attribute. This means we don't support other attributes
+        // with the same name inside the outer attribute, but it shouldn't be a problem as long as they could be renamed in the `use`
+        // declaration (in the unlikely event that another attribute shared the same name).
+        if let Some(PathSegment { ident, .. }) = node.path().segments.last() {
             let ident = ident.to_string();
             match ident.as_str() {
                 // conditional pseudo-attribute (TYPE_GEN_IF == TRAIT_GEN_IF when type_gen is disabled)
@@ -477,7 +577,7 @@ impl VisitMut for Subst {
                     match node.parse_args::<CondParams>() {
                         Ok(cond) => {
                             let mut output = proc_macro2::TokenStream::new();
-                            if VERBOSE { println!("- {} -> {}", pathname(&self.generic_arg), pathname(self.new_types.first().unwrap())); }
+                            if VERBOSE { println!("- {} -> {}", pathname(&self.generic_arg), pathname(self.types.first().unwrap())); }
                             let mut g = cond.generic_arg;
                             self.visit_type_mut(&mut g);
                             if cond.is_negated {
@@ -525,7 +625,7 @@ impl VisitMut for Subst {
                             // It would be nice to give a warning if the format of the attributes were different,
                             // once there is a way to generate custom warnings (an error for that seems too harsh).
                             if !types.format.is_legacy() {
-                                let g = types.generic_arg;
+                                let g = types.args;
                                 output.extend(quote!(#g -> ));
                             }
                             let mut first = true;
@@ -587,7 +687,7 @@ impl VisitMut for Subst {
             if let Some(ts_str) = replace_str(
                 &lit.to_token_stream().to_string(),
                 &format!("${{{}}}", pathname(&self.generic_arg)),
-                &pathname(self.new_types.first().unwrap()))
+                &pathname(self.types.first().unwrap()))
             {
                 let new_lit: LitStr = parse_str(&ts_str).expect(&format!("parsing LitStr failed: {}", ts_str));
                 node.lit = Lit::Str(new_lit);
@@ -629,7 +729,7 @@ impl VisitMut for Subst {
         if let Some(ts_str) = replace_str(
             &node.tokens.to_string(),
             &format!("${{{}}}", pathname(&self.generic_arg)),
-            &pathname(self.new_types.first().unwrap()))
+            &pathname(self.types.first().unwrap()))
         {
             let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing Macro failed: {}", ts_str));
             node.tokens = new_ts;
@@ -648,7 +748,7 @@ impl VisitMut for Subst {
             // - U or U.add(1) must stay
             if length < path_length || self.can_subst_path() {
                 if VERBOSE { print!("[path] path: {} length = {}", path_name, length); }
-                match self.new_types.first().unwrap() {
+                match self.types.first().unwrap() {
                     SubstType::Path(p) => {
                         let mut new_seg = p.segments.clone();
                         for seg in path.segments.iter().skip(length) {
@@ -693,7 +793,7 @@ impl VisitMut for Subst {
                         if length < path_length || self.can_subst_path() {
                             // TODO: find a case where length < path_length
                             if VERBOSE { print!("[type] type path: {} length = {length}, path length = {path_length} {} -> ", path_name, if self.can_subst_path() { ", can_subst" } else { "" }); }
-                            *node = if let SubstType::Type(ty) = self.new_types.first().unwrap() {
+                            *node = if let SubstType::Type(ty) = self.types.first().unwrap() {
                                 if VERBOSE { println!("{}", pathname(ty)); }
                                 ty.clone()
                             } else {
@@ -819,32 +919,8 @@ fn parse_parameters(input: ParseStream, is_conditional: bool)
 impl Parse for AttrParams {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let (args, types, format, _) = parse_parameters(&input, false)?;
-        
-        // FIXME: temporary
-        let generic_arg = if let ArgType::All(mut v) = args { v.pop().unwrap() } else { panic!("not supported yet") };
-        Ok(AttrParams { generic_arg, new_types: types, format })
+        Ok(AttrParams { args, new_types: types, format })
     }
-}
-
-fn to_subst_types(mut types: Vec<Type>) -> (bool, Vec<SubstType>) {
-    let mut visitor = TurboFish;
-    for ty in types.iter_mut() {
-        visitor.visit_type_mut(ty);
-    }
-    let is_path = types.iter().all(|ty| matches!(ty, Type::Path(_)));
-    let subst_types = types.into_iter()
-        .map(|ty|
-            if is_path {
-                if let Type::Path(p) = ty {
-                    SubstType::Path(p.path)
-                } else {
-                    panic!("this should match Type::Path: {:?}", ty)
-                }
-            } else {
-                SubstType::Type(ty)
-            })
-        .collect::<Vec<_>>();
-    (is_path, subst_types)
 }
 
 /// Attribute argument parser used for the inner conditional attributes
@@ -862,14 +938,10 @@ impl Parse for CondParams {
 }
 
 /// Attribute argument parser used for the procedural macro being processed
-impl Parse for Subst {
+impl Parse for TraitGen {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
         let (args, types, format, _) = parse_parameters(input, false)?;
-        
-        // FIXME: temporary
-        let generic_arg = if let ArgType::All(mut v) = args { v.pop().unwrap() } else { panic!("not supported yet: {args:?}") };
-        let (is_path, new_types) = to_subst_types(types);
-        Ok(Subst { generic_arg, new_types, format, is_path, can_subst_path: Vec::new() })
+        Ok(TraitGen { args, types, format })
     }
 }
 
@@ -896,6 +968,45 @@ impl VisitMut for TurboFish {
 }
 
 //==============================================================================
+
+fn substitute(item: TokenStream, mut types: Subst) -> TokenStream {
+    if VERBOSE || VERBOSE_TF {
+        println!("{}\ntrait_gen for {} -> {}: {}",
+                 "=".repeat(80),
+                 pathname(&types.generic_arg),
+                 if types.is_path { "PATH" } else { "TYPE" },
+                 &types.types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")
+        )
+    }
+    if VERBOSE || VERBOSE_TF { println!("\n{}\n{}", item, "-".repeat(80)); }
+    let mut output = match types.format {
+        AttributeFormat::Arrow =>
+            TokenStream::new(),
+        AttributeFormat::Legacy =>
+            item.clone(),
+        AttributeFormat::In => {
+            let message = format!(
+                "Use of deprecated format '{} in [{}]' in #[trait_gen] macro",
+                pathname(&types.generic_arg),
+                &types.types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
+            );
+            // no way to generate warnings in Rust
+            if VERBOSE || VERBOSE_TF { println!("{}\nWARNING: \n{}", "=".repeat(80), message); }
+            TokenStream::from(quote!(#[deprecated = #message]))
+        }
+    };
+    let ast: File = syn::parse(item).unwrap();
+    while !types.types.is_empty() {
+        let mut modified_ast = ast.clone();
+        types.visit_file_mut(&mut modified_ast);
+        output.extend(TokenStream::from(quote!(#modified_ast)));
+        assert!(types.can_subst_path.is_empty(), "self.enabled has {} entries after type {}",
+                types.can_subst_path.len(), pathname(types.types.first().unwrap()));
+        types.types.remove(0);
+    }
+    if VERBOSE { println!("end trait_gen for {}\n{}", pathname(&types.generic_arg), "-".repeat(80)); }
+    output
+}
 
 /// Generates the attached implementation code for all the types given in argument.
 ///
@@ -962,48 +1073,54 @@ impl VisitMut for TurboFish {
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
-    let mut types = match syn::parse::<Subst>(args) {
+    let mut attribute = match syn::parse::<TraitGen>(args) {
         Ok(types) => types,
         Err(err) => {
             abort!(err.span(), err;
                 help = "The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]");
         }
     };
-    if VERBOSE || VERBOSE_TF {
-        println!("{}\ntrait_gen for {} -> {}: {}",
-                 "=".repeat(80),
-                 pathname(&types.generic_arg),
-                 if types.is_path { "PATH" } else { "TYPE" },
-                 &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")
-        )
-    }
-    if VERBOSE || VERBOSE_TF { println!("\n{}\n{}", item, "-".repeat(80)); }
-    let mut output = match types.format {
-        AttributeFormat::Arrow =>
-            TokenStream::new(),
-        AttributeFormat::Legacy =>
-            item.clone(),
-        AttributeFormat::In => {
-            let message = format!(
-                "Use of deprecated format '{} in [{}]' in #[trait_gen] macro",
-                 pathname(&types.generic_arg),
-                 &types.new_types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
-            );
-            // no way to generate warnings in Rust
-            if VERBOSE || VERBOSE_TF { println!("{}\nWARNING: \n{}", "=".repeat(80), message); }
-            TokenStream::from(quote!(#[deprecated = #message]))
+    let mut output = TokenStream::new();
+    let args = std::mem::take(&mut attribute.args);
+    match &args {
+        ArgType::All(paths) => {
+            if paths.len() == 1 {
+                let path = paths.get(0).unwrap();
+                output = substitute(item, Subst::from_trait_gen(attribute, path.clone()))
+            } else {
+                for path in paths {
+                    let types = &attribute.types;
+                    output.extend(TokenStream::from(quote!(#[trait_gen(#path -> #( #types ),*)])));
+                }
+                output.extend(item);
+            }
         }
-    };
-    let ast: File = syn::parse(item).unwrap();
-    while !types.new_types.is_empty() {
-        let mut modified_ast = ast.clone();
-        types.visit_file_mut(&mut modified_ast);
-        output.extend(TokenStream::from(quote!(#modified_ast)));
-        assert!(types.can_subst_path.is_empty(), "self.enabled has {} entries after type {}",
-                types.can_subst_path.len(), pathname(types.new_types.first().unwrap()));
-        types.new_types.remove(0);
+        ArgType::Diff(path1, path2) | ArgType::Exclusive(path1, path2) | ArgType::Inclusive(path1, path2) => {
+            // we could also translate the attributes into the simple format using conditionals, but it's
+            // easier and safer to simply generate the combinations
+            let (_, types) = to_subst_types(attribute.types.clone());
+            let mut subst = Subst::from_trait_gen(attribute.clone(), path1.clone());
+            for (i1, p1) in types.iter().enumerate() {
+                for (i2, p2) in types.iter().enumerate() {
+                    let cond = match &args {
+                        ArgType::Diff(_, _) => i1 != i2,
+                        ArgType::Exclusive(_, _) => i1 < i2,
+                        ArgType::Inclusive(_, _) => i1 <= i2,
+                        _ => panic!("can't happen")
+                    };
+                    if cond {
+                        subst.types = vec![p1.clone()];
+                        subst.generic_arg = path1.clone();
+                        let stream = substitute(item.clone(), subst.clone());
+                        subst.types = vec![p2.clone()];
+                        subst.generic_arg = path2.clone();
+                        output.extend(substitute(stream, subst.clone()));
+                    }
+                }
+            }
+        }
+        _ => panic!("can't happen"),
     }
-    if VERBOSE { println!("end trait_gen for {}\n{}", pathname(&types.generic_arg), "-".repeat(80)); }
     if VERBOSE { println!("{}\n{}", output, "=".repeat(80)); }
     output
 }

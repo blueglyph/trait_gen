@@ -2,40 +2,17 @@
 //
 // Integration tests.
 
-// =============================================================================
-// Main format:
-//
-//     // (T needn't be an alias or an existing type)
-//     #[trait_gen(T -> Meter, Foot, Mile)]
-// or
-//     #[trait_gen(T in [Meter, Foot, Mile])]
-// or
-//     #[trait_gen(Meter -> Meter, Foot, Mile)]
-// -----------------------------------------------------------------------------
-
-mod supported_formats {
+/// Tests the `#[trait_gen(T -> i16, u16)]` format
+mod simple_formats {
     use trait_gen::trait_gen;
 
     struct Test<T>(T);
-
-    // // legacy format
-    // #[trait_gen(i8, u8)]
-    // impl Test<i8> {
-    //     fn test() -> bool { true }
-    // }
 
     // main format
     #[trait_gen(T -> i16, u16)]
     impl Test<T> {
         fn test() -> bool { true }
     }
-
-    // #[cfg(feature = "in_format")]
-    // // alternate format with 'in' and brackets
-    // #[trait_gen(T in [i32, u32])]
-    // impl Test<T> {
-    //     fn test() -> bool { true }
-    // }
 
     // verifies that brackets can be used for types with the '->' syntax
     #[trait_gen(T -> [i64;2])]
@@ -48,13 +25,6 @@ mod supported_formats {
         fn test() -> bool { true }
     }
 
-    // #[cfg(feature = "in_format")]
-    // // verifies that brackets can be used for types with the 'in' syntax
-    // #[trait_gen(T in [[i128;2]])]
-    // impl Test<T> {
-    //     fn test() -> bool { true }
-    // }
-
     #[trait_gen(T -> (u32, u32), (u8, u8))]
     impl Test<T> {
         #[allow(unused)]
@@ -63,25 +33,159 @@ mod supported_formats {
 
     #[test]
     fn test() {
-        // assert!(Test::<i8>::test());
-        // assert!(Test::<u8>::test());
         assert!(Test::<i16>::test());
         assert!(Test::<u16>::test());
         assert!(Test::<[i64;2]>::test());
         assert!(Test::<&[u64]>::test());
         assert!(Test::<(u32, u32)>::test());
     }
-
-    // #[allow(deprecated)]
-    // #[cfg(feature = "in_format")]
-    // #[test]
-    // fn test_in_format() {
-    //     assert!(Test::<i32>::test());
-    //     assert!(Test::<u32>::test());
-    //     assert!(Test::<[i128;2]>::test());
-    // }
 }
 
+/// Tests the `#[trait_gen(A, B -> u8, u16)]` format
+mod advanced_format_all {
+    use std::ops::Add;
+    use trait_gen::{trait_gen};
+
+    #[derive(PartialEq, Debug)]
+    struct Wrapper<T>(T);
+
+    #[trait_gen(A, B -> u8, u16)]
+    impl Add<Wrapper<B>> for Wrapper<A> {
+        type Output = Wrapper<A>;
+
+        fn add(self, rhs: Wrapper<B>) -> Self::Output {
+            Wrapper::<A>(self.0 + A::try_from(rhs.0).expect(&format!("overflow when converting {} to ${A}", rhs.0)))
+        }
+    }
+
+    #[test]
+    fn test() {
+        assert_eq!(Wrapper(1_u8) + Wrapper(2_u8), Wrapper(3_u8));
+        assert_eq!(Wrapper(1_u8) + Wrapper(2_u16), Wrapper(3_u8));
+        assert_eq!(Wrapper(1_u16) + Wrapper(2_u8), Wrapper(3_u16));
+        assert_eq!(Wrapper(1_u16) + Wrapper(2_u16), Wrapper(3_u16));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fail() {
+        let x = Wrapper(1_u8) + Wrapper(1000_u16);
+        println!("{x:?}");
+    }
+}
+
+/// Tests the `#[trait_gen(T != U -> u8, u16, u32)]` format
+mod advanced_format_diff {
+    use trait_gen::trait_gen;
+
+    #[derive(Clone, PartialEq, Debug)]
+    struct Wrapper<T>(T);
+
+    // The type must be different to avoid the error "conflicting implementation in crate `core`: impl<T> From<T> for T"
+    #[trait_gen(T != U -> u8, u16, u32)]
+    impl From<Wrapper<U>> for Wrapper<T> {
+        /// converts ${U} to ${T}
+        fn from(value: Wrapper<U>) -> Self {
+            Wrapper(T::try_from(value.0).expect(&format!("overflow when converting {} to ${T}", value.0)))
+        }
+    }
+
+    #[test]
+    fn test() {
+        // other combinations would trigger the "conflicting implementation" error,
+        // so no need to explicitly test they're not implemented
+        assert_eq!(Wrapper::<u8>::from(Wrapper(10_u8)), Wrapper(10_u8));
+        assert_eq!(Wrapper::<u16>::from(Wrapper(10_u8)), Wrapper(10_u16));
+        assert_eq!(Wrapper::<u32>::from(Wrapper(10_u8)), Wrapper(10_u32));
+        assert_eq!(Wrapper::<u8>::from(Wrapper(20_u16)), Wrapper(20_u8));
+        assert_eq!(Wrapper::<u16>::from(Wrapper(20_u16)), Wrapper(20_u16));
+        assert_eq!(Wrapper::<u32>::from(Wrapper(20_u16)), Wrapper(20_u32));
+        assert_eq!(Wrapper::<u8>::from(Wrapper(30_u32)), Wrapper(30_u8));
+        assert_eq!(Wrapper::<u16>::from(Wrapper(30_u32)), Wrapper(30_u16));
+        assert_eq!(Wrapper::<u32>::from(Wrapper(30_u32)), Wrapper(30_u32));
+    }
+}
+
+/// Tests the `#[trait_gen(T !< U -> u8, u16, u32)]` format
+mod advanced_format_exclusive {
+    use trait_gen::trait_gen;
+
+    #[derive(Clone, PartialEq, Debug)]
+    struct Wrapper<T>(T);
+
+    // The type must be different to avoid the error "conflicting implementation in crate `core`: impl<T> From<T> for T"
+    #[trait_gen(T !< U -> u8, u16, u32)]
+    impl From<Wrapper<T>> for Wrapper<U> {
+        /// converts ${T} to ${U}
+        fn from(value: Wrapper<T>) -> Self {
+            Wrapper(U::from(value.0))
+        }
+    }
+
+    #[test]
+    fn test() {
+        // other combinations would trigger the "conflicting implementation" or
+        // "trait `From<u16>` is not implemented for `u8`" error,
+        // so no need to explicitly test they're not implemented
+        assert_eq!(Wrapper::<u16>::from(Wrapper(10_u8)), Wrapper(10_u16));
+        assert_eq!(Wrapper::<u32>::from(Wrapper(10_u8)), Wrapper(10_u32));
+        assert_eq!(Wrapper::<u32>::from(Wrapper(20_u16)), Wrapper(20_u32));
+    }
+}
+
+/// Tests the `#[trait_gen(T =< U -> u8, u16, u32)]` format
+mod advanced_format_inclusive {
+    use std::ops::Add;
+    use trait_gen::trait_gen;
+
+    #[derive(PartialEq, Debug)]
+    struct Wrapper<T>(T);
+
+    #[trait_gen(T =< U -> u8, u16, u32)]
+    impl Add<Wrapper<T>> for Wrapper<U> {
+        type Output = Wrapper<U>;
+
+        fn add(self, rhs: Wrapper<T>) -> Self::Output {
+            Wrapper::<U>(self.0 + <U>::from(rhs.0))
+        }
+    }
+
+    #[test]
+    fn test() {
+        // other combinations would trigger the "trait `From<u16>` is not implemented for `u8`"
+        // error, so no need to explicitly test they're not implemented
+        assert_eq!(Wrapper(1_u8) + Wrapper(10_u8), Wrapper(11_u8));
+        assert_eq!(Wrapper(1_u16) + Wrapper(10_u8), Wrapper(11_u16));
+        assert_eq!(Wrapper(1_u32) + Wrapper(10_u8), Wrapper(11_u32));
+        assert_eq!(Wrapper(1_u16) + Wrapper(10_u16), Wrapper(11_u16));
+        assert_eq!(Wrapper(1_u32) + Wrapper(10_u16), Wrapper(11_u32));
+        assert_eq!(Wrapper(1_u32) + Wrapper(10_u32), Wrapper(11_u32));
+    }
+}
+
+/// Tests the attribute without declaring it in a `use`
+mod no_use_example {
+    #[derive(Clone, PartialEq, Debug)]
+    struct Wrapper<T>(T);
+
+    #[trait_gen::trait_gen(T -> u8, u16, u32)]
+    #[trait_gen::trait_gen_if(!T in u8)]
+    impl From<Wrapper<u8>> for Wrapper<T> {
+        fn from(value: Wrapper<u8>) -> Self {
+            Wrapper(T::from(value.0))
+        }
+    }
+
+    #[test]
+    fn test() {
+        let a = Wrapper(10_u8);
+        assert_eq!(Wrapper::<u8>::from(a.clone()), Wrapper(10_u8));
+        assert_eq!(Wrapper::<u16>::from(a.clone()), Wrapper(10_u16));
+        assert_eq!(Wrapper::<u32>::from(a), Wrapper(10_u32));
+    }
+}
+
+/// Tests the `#[trait_gen_if(T in Metre)]` conditional attribute with one item
 mod conditional_code {
     use std::ops::Add;
     use trait_gen::{trait_gen, trait_gen_if};
@@ -140,6 +244,7 @@ mod conditional_code {
     }
 }
 
+/// Tests the `#[trait_gen_if(T in i8, u8)]` conditional attribute with several items
 mod conditional_code2 {
     use trait_gen::{trait_gen, trait_gen_if};
 
@@ -182,6 +287,7 @@ mod conditional_code2 {
     }
 }
 
+/// Tests the `#[trait_gen_if(!T in U)]` conditional attribute with a negation
 mod conditional_code3 {
     use trait_gen::{trait_gen, trait_gen_if};
     
@@ -412,15 +518,6 @@ mod path_case_01 {
         }
     }
 
-    // #[trait_gen(super::Meter<f32>, super::Foot<f32>)]
-    // impl Neg for super::Meter<f32> {
-    //     type Output = super::Meter<f32>;
-    //
-    //     fn neg(self) -> Self::Output {
-    //         super::Meter::<f32>(-self.0)
-    //     }
-    // }
-
     #[trait_gen(U -> super::Meter<f32>, super::Foot<f32>)]
     impl Neg for U {
         type Output = U;
@@ -451,7 +548,6 @@ mod path_case_01 {
 }
 
 mod path_case_02 {
-
     struct Meter<T>(T);
     struct Foot<T>(T);
 
@@ -820,7 +916,7 @@ mod impl_cond {
     // with this ordering, the #[trait_gen_if] see either
     // - T = u8, u16, or u32
     // - U = u8, u16, u32, &u8, &u16, or &u32
-    #[trait_gen(T -> u8,/* u16, u32*/)]
+    #[trait_gen(T -> u8, u16, u32)]
     #[trait_gen(U -> T, &T)]
     impl Binary for U {
         #[trait_gen_if(U in [u8, &u8])] // #[trait_gen_if(T in u8])] works, too
@@ -853,10 +949,10 @@ mod impl_cond {
         let tests = vec![
             (1_u8.msb(),        7,      1_u8.is_ref(),      false),
             ((&1_u8).msb(),     7,      (&1_u8).is_ref(),   true),
-            // (1_u16.msb(),       15,     1_u16.is_ref(),     false),
-            // ((&1_u16).msb(),    15,      (&1_u8).is_ref(),  true),
-            // (1_u32.msb(),       31,     1_u32.is_ref(),     false),
-            // ((&1_u32).msb(),    31,     (&1_u32).is_ref(),  true),
+            (1_u16.msb(),       15,     1_u16.is_ref(),     false),
+            ((&1_u16).msb(),    15,      (&1_u8).is_ref(),  true),
+            (1_u32.msb(),       31,     1_u32.is_ref(),     false),
+            ((&1_u32).msb(),    31,     (&1_u32).is_ref(),  true),
         ];
         for (index, (result_msb, expected_msb, result_is_ref, expected_is_ref)) in tests.into_iter().enumerate() {
             assert_eq!(result_msb, expected_msb, "test {index} failed on msb");
@@ -1087,116 +1183,6 @@ mod ex04 {
         assert_eq!(x.b(), 2);
     }
 }
-
-// // =============================================================================
-// // "Legacy" format:
-// //
-// //     type T = Meter;
-// //     #[trait_gen(T, Foot, Mile)]
-// // or
-// //     #[trait_gen(Meter, Foot, Mile)]
-// // -----------------------------------------------------------------------------
-//
-// mod ex01b {
-//     use std::ops::Add;
-//     use trait_gen::trait_gen;
-//
-//     #[derive(Clone, Copy)]
-//     /// Length in meter
-//     struct Meter(f64);
-//
-//     #[derive(Clone, Copy)]
-//     /// Length in foot
-//     struct Foot(f64);
-//
-//     #[derive(Clone, Copy)]
-//     /// Length in miles
-//     struct Mile(f64);
-//
-//     type T = Meter;
-//
-//     #[trait_gen(T, Foot, Mile)]
-//     impl Add for T {
-//         type Output = T;
-//
-//         fn add(self, rhs: T) -> Self::Output {
-//             // The first type identifier, here 'T', must not be redefined by a generic because the
-//             // macro doesn't handle scopes.
-//             //
-//             // Uncomment the code below to see the error:
-//             // --------------------------------
-//             // fn fake<T: Sized>(_x: T) {
-//             //     println!("x-x");
-//             // }
-//             // fake(1_u32);
-//             // --------------------------------
-//
-//             let _zero = T::default();
-//
-//             // Note that it is not possible to use a type alias to instantiate an object, so here
-//             // we use `Self( ... )` and not `T( ... )`. The intermediate `result` variable is
-//             // optional and is only there to test the type substitution:
-//
-//             let result: T = Self(self.0 + rhs.0);
-//             result
-//         }
-//     }
-//
-//     // Usage of `Self(value)` since an alias cannot be used as constructor:
-//     #[trait_gen(T, Foot, Mile)]
-//     impl Default for T {
-//         fn default() -> Self {
-//             Self(0.0)
-//         }
-//     }
-//
-//     #[test]
-//     fn test_original_type() {
-//         let a_m = Meter(1.0);
-//         let b_m = Meter(2.0);
-//         let c_m = a_m + b_m + Meter::default();
-//         assert_eq!(c_m.0, 3.0);
-//     }
-//
-//     #[test]
-//     fn test_generated_types() {
-//         let a_ft = Foot(1.0);
-//         let b_ft = Foot(2.0);
-//         let c_ft = a_ft + b_ft + Foot::default();
-//         assert_eq!(c_ft.0, 3.0);
-//
-//         let a_mi = Mile(1.0);
-//         let b_mi = Mile(2.0);
-//         let c_mi = a_mi + b_mi + Mile::default();
-//         assert_eq!(c_mi.0, 3.0);
-//     }
-// }
-//
-// mod ex02b {
-//     use trait_gen::trait_gen;
-//
-//     trait AddMod {
-//         fn add_mod(self, other: Self, m: Self) -> Self;
-//     }
-//
-//     // No need to use `type T = u32` in such a simple case:
-//     #[trait_gen(u32, i32, u64, i64, f32, f64)]
-//     impl AddMod for u32 {
-//         fn add_mod(self, other: Self, m: Self) -> Self {
-//             (self + other) % m
-//         }
-//     }
-//
-//     #[test]
-//     fn test_add_mod() {
-//         assert_eq!(10_u32.add_mod(5, 8), 7);
-//         assert_eq!(10_i32.add_mod(5, 8), 7);
-//         assert_eq!(10_u64.add_mod(5, 8), 7);
-//         assert_eq!(10_i64.add_mod(5, 8), 7);
-//         assert_eq!(10_f32.add_mod(5.0, 8.0), 7.0);
-//         assert_eq!(10_f64.add_mod(5.0, 8.0), 7.0);
-//     }
-// }
 
 mod ex03b {
     use trait_gen::trait_gen;

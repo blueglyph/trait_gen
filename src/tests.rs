@@ -9,12 +9,6 @@ use crate::*;
 
 use proc_macro2::{Span, TokenStream};
 
-impl SubstType {
-    pub fn is_path(&self) -> bool {
-        if let SubstType::Path(_) = self { true } else { false }
-    }
-}
-
 fn annotate_error(text: &str, msg: &str, span: Span) -> String {
     // only works for single-lined sources:
     assert!(!text.contains('\n'));
@@ -118,16 +112,16 @@ fn parse_args() {
         let stream = tokenstream!(string, error);
         // tests Subst::parse
         let mut new_error = true;
-        match try_parse::<Subst>(stream, string) {
+        match try_parse::<TraitGen>(stream, string) {
             Ok(subst) => {
                 match () {
                     _ if parse_error =>
                         println!("{report}expecting parse error"),
-                    _ if pathname(&subst.generic_arg) != generic =>
-                        println!("{report}expecting generic '{}' instead of '{}'", generic, pathname(&subst.generic_arg)),
+                    _ if pathname(&subst.args) != generic =>
+                        println!("{report}expecting generic '{}' instead of '{}'", generic, pathname(&subst.args)),
                     _ if subst.format.is_legacy() != legacy =>
                         println!("{report}expecting {}legacy", if legacy { "" } else { "non-" }),
-                    _ if !subst.new_types.iter().all(|t| t.is_path() == path) =>
+                    _ if subst.types.iter().all(|ty| matches!(ty, Type::Path(_))) != path =>
                         println!("{report}expecting {} mode", if path { "path" } else { "type" }),
                     _ => new_error = false
                 }
@@ -152,8 +146,8 @@ fn parse_args() {
                     match () {
                         _ if parse_error =>
                             println!("{report}expecting parse error"),
-                        _ if pathname(&params.generic_arg) != generic =>
-                            println!("{report}expecting generic '{}' instead of '{}'", generic, pathname(&params.generic_arg)),
+                        _ if pathname(&params.args) != generic =>
+                            println!("{report}expecting generic '{}' instead of '{}'", generic, pathname(&params.args)),
                         _ if params.format.is_legacy() != legacy =>
                             println!("{report}expecting {}legacy", if legacy { "" } else { "non-" }),
                         _ => new_error = false
@@ -259,6 +253,7 @@ mod test_parse_parameters {
     
     #[test]
     fn test1() {
+        const VERBOSE: bool = false;
         let tests = vec![
             (false, "T -> u8, u16",           Some("ArgsResult { args: All(T), types: [u8, u16], format: Arrow, is_negated: false }")),
             (false, "T, U -> u8, u16, u32",   Some("ArgsResult { args: All(T, U), types: [u8, u16, u32], format: Arrow, is_negated: false }")),
@@ -280,8 +275,10 @@ mod test_parse_parameters {
                     Err(_err) => None,
                 }
             };
-            if let Some(ref args) = args_maybe {
-                println!("{string}: {args:?}");
+            if VERBOSE {
+                if let Some(ref args) = args_maybe {
+                    println!("{string}: {args:?}");
+                }
             }
             let result = args_maybe.map(|a| format!("{a:?}"));
             assert_eq!(result, expected.map(|s| s.to_string()), "test {string} failed");
