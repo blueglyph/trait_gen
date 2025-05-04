@@ -1010,57 +1010,43 @@ fn substitute(item: TokenStream, mut types: Subst) -> TokenStream {
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut attribute = match syn::parse::<TraitGen>(args) {
         Ok(types) => types,
-        Err(err) => {
-            abort!(err.span(), err;
-                help = "The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]");
-        }
+        Err(err) => abort!(err.span(), err; 
+            help = "The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]"),
     };
     let mut output = TokenStream::new();
     let args = std::mem::take(&mut attribute.args);
     match &args {
         ArgType::All(paths) => {
-            if paths.len() == 1 {
-                let path = paths.get(0).unwrap();
-                output = substitute(item, Subst::from_trait_gen(attribute, path.clone()))
-            } else {
-                // generates all the permutations
-                let mut subst = Subst::from_trait_gen(attribute.clone(), paths[0].clone());
-                let types = std::mem::take(&mut subst.types);
-                let new_iterators = (0..paths.len()).map(|_| types.iter()).collect::<Vec<_>>();
-                let mut values = vec![];
-                let mut iterators = vec![];
-                loop {
-                    // fill missing iterators with fresh ones:
-                    for mut new_iter in new_iterators.iter().skip(iterators.len()).cloned() {
-                        values.push(new_iter.next().unwrap());
-                        iterators.push(new_iter);
-                    }
-                    // do the substitutions:
-                    let mut stream = item.clone();
-                    for (arg, &ty) in paths.iter().zip(values.iter()) {
-                        subst.generic_arg = arg.clone();
-                        subst.types = vec![ty.clone()];
-                        stream = substitute(stream, subst.clone());
-                    }
-                    output.extend(stream);
-                    // pops dead iterators and increases the next one:
-                    while let Some(mut it) = iterators.pop() {
-                        values.pop();
-                        if let Some(v) = it.next() {
-                            values.push(v);
-                            iterators.push(it);
-                            break;
-                        }
-                    }
-                    if values.is_empty() { break }
+            // generates all the permutations
+            let mut subst = Subst::from_trait_gen(attribute.clone(), paths[0].clone());
+            let types = std::mem::take(&mut subst.types);
+            let new_iterators = (0..paths.len()).map(|_| types.iter()).collect::<Vec<_>>();
+            let mut values = vec![];
+            let mut iterators = vec![];
+            loop {
+                // fill missing iterators with fresh ones:
+                for mut new_iter in new_iterators.iter().skip(iterators.len()).cloned() {
+                    values.push(new_iter.next().unwrap());
+                    iterators.push(new_iter);
                 }
-                
-                // // attribute stack alternative (shorter but heavier):
-                // for path in paths {
-                //     let types = &attribute.types;
-                //     output.extend(TokenStream::from(quote!(#[trait_gen(#path -> #( #types ),*)])));
-                // }
-                // output.extend(item);
+                // do the substitutions:
+                let mut stream = item.clone();
+                for (arg, &ty) in paths.iter().zip(values.iter()) {
+                    subst.generic_arg = arg.clone();
+                    subst.types = vec![ty.clone()];
+                    stream = substitute(stream, subst.clone());
+                }
+                output.extend(stream);
+                // pops dead iterators and increases the next one:
+                while let Some(mut it) = iterators.pop() {
+                    values.pop();
+                    if let Some(v) = it.next() {
+                        values.push(v);
+                        iterators.push(it);
+                        break;
+                    }
+                }
+                if values.is_empty() { break }
             }
         }
         
