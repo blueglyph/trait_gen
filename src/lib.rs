@@ -267,7 +267,7 @@ const VERBOSE_TF: bool = false;
 // Note: when the feature "type_gen" is disabled, we avoid matching "type_gen" by
 //       making both constants equal (those constants are used in a match statement).
 const TRAIT_GEN: &str = "trait_gen";
-const TYPE_GEN: &str = if cfg!(feature = "type_gen") { "type_gen" } else { TRAIT_GEN_IF };
+const TYPE_GEN: &str = if cfg!(feature = "type_gen") { "type_gen" } else { TRAIT_GEN };
 
 // Attributes for conditional implementation.
 // Note: when the feature "type_gen" is disabled, we avoid matching "type_gen_if" by

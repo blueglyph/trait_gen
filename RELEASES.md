@@ -1,3 +1,7 @@
+# 1.2.1 (2025-05-06)
+
+- fix a bug with the attribute name when the "type_gen" feature is disabled.
+
 # 1.2.0 (2025-05-02)
 
 - add negation in 'trait_gen_if' (the `!` must be in first position after the opening parenthesis):
