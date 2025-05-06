@@ -17,8 +17,8 @@ readme = "README.md"
 proc-macro = true
 
 [features]
-default = ["type_gen"]
-type_gen = []
+default = []
+no_type_gen = []
 
 [dependencies]
 quote = "1.0.40"

@@ -210,13 +210,13 @@ const VERBOSE_TF: bool = false;
 // Note: when the feature "type_gen" is disabled, we avoid matching "type_gen" by
 //       making both constants equal (those constants are used in a match statement).
 const TRAIT_GEN: &str = "trait_gen";
-const TYPE_GEN: &str = if cfg!(feature = "type_gen") { "type_gen" } else { TRAIT_GEN_IF };
+const TYPE_GEN: &str = if cfg!(feature = "no_type_gen") { TRAIT_GEN } else { "type_gen" };
 
 // Attributes for conditional implementation.
 // Note: when the feature "type_gen" is disabled, we avoid matching "type_gen_if" by
 //       making both constants equal (those constants are used in a match statement).
 const TRAIT_GEN_IF: &str = "trait_gen_if";
-const TYPE_GEN_IF: &str = if cfg!(feature = "type_gen") { "type_gen_if" } else { TRAIT_GEN_IF };
+const TYPE_GEN_IF: &str = if cfg!(feature = "no_type_gen") { TRAIT_GEN_IF } else { "type_gen_if" };
 
 //==============================================================================
 // Misc types and their implementations
@@ -1086,7 +1086,7 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     output
 }
 
-#[cfg(feature = "type_gen")]
+#[cfg(not(feature = "no_type_gen"))]
 /// Generates the attached code for all the types given in argument.
 ///
 /// This is only a synonym of the [trait_gen()] attribute, and it's provided since these attributes can
@@ -1128,7 +1128,7 @@ pub fn trait_gen_if(args: TokenStream, item: TokenStream) -> TokenStream {
     process_conditional_attribute("trait_gen_if", args, item)
 }
 
-#[cfg(feature = "type_gen")]
+#[cfg(not(feature = "no_type_gen"))]
 /// Generates the attached code if the condition is met.
 ///
 /// This is only a synonym of the [trait_gen_if()] attribute, and it's provided since these attributes can
