@@ -2,16 +2,50 @@
 //
 // Macros and helpers. Contains procedural macros so nothing else than macros can be exported.
 
-//! # The trait_gen library
+//! This crate provides attribute macros that generate the attached implementation for all the
+//! types given in argument. It was first intended for trait implementations, hence the crate name,
+//! but it can also be used for any generic implementation.
 //!
-//! This library provides an attribute macro to generate the implementations for several
-//! types without needing custom declarative macros, code repetition, or blanket implementations.
-//! It makes the code easier to read and to maintain.
+//! ## Usage
+//! The attribute is placed before the pseudo-generic code to implement. The _generic arguments_
+//! are given first, followed by a right arrow (`->`) and a list of types that will replace the
+//! argument in the generated implementations:
 //!
-//! It was first intended at trait implementation, hence the name of the crate, but it can also
-//! be used on generic type implementations; there are some examples in the [integration tests](https://github.com/blueglyph/trait_gen/blob/v1.2.0/tests/integration.rs).
+//! ```rust
+//! # use trait_gen::trait_gen;
+//! # struct Type1; struct Type2; struct Type3;
+//! # trait Trait {}
+//! #[trait_gen(T -> Type1, Type2, Type3)]
+//! impl Trait for T {
+//!     // ...
+//! }
+//! ```
 //!
-//! Here is a short example:
+//! The attribute macro successively substitutes the generic argument `T` in the code with
+//! the given types (`Type1`, `Type2`, `Type3`) to generate each implementation.
+//!
+//! All the [type paths](https://doc.rust-lang.org/reference/paths.html#paths-in-types) beginning
+//! with `T` in the code have that part replaced. For example, `T::default()` generates
+//! `Type1::default()`, `Type2::default()` and so on, but `super::T` is unchanged. Similarly, all
+//! the [types](https://doc.rust-lang.org/reference/types.html) including `T` in the code have that
+//! part replaced; for example, `&T` or `Box<T>`.
+//!
+//! The compiler will trigger an error if the resulting code is wrong. For example
+//! `#[trait_gen(T -> u64, f64)]` cannot be applied to `let x: T = 0;` because `0` is not a valid
+//! floating-point literal.
+//!
+//! Finally, the actual type of `T` replaces any occurrence of `${T}` in doc comments, macros, and
+//! string literals.
+//!
+//! _Notes:_
+//! - _Using the letter "T" is not mandatory; any type path will do. For example, `g::Type` is fine
+//! too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers
+//! are preferred._
+//! - _`type_gen` is a synonym attribute that can be used instead of `trait_gen`. This can be disabled with
+//! the `no_type_gen` feature, in case it conflicts with another 3rd-party attribute._
+//! - _More complex formats with several arguments and conditions are shown in later examples._
+//!
+//! Here is a simple example:
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
@@ -34,119 +68,155 @@
 //!         u8::BITS - 1 - self.leading_zeros()
 //!     }
 //! }
+//!
 //! impl MyLog for u16 {
 //!     fn my_log2(self) -> u32 {
 //!         u16::BITS - 1 - self.leading_zeros()
 //!     }
 //! }
-//! // and so on for the remaining types
+//!
+//! // ... and so on for the remaining types
 //! ```
 //!
-//! ## Usage
-//!
-//! The attribute is placed before the pseudo-generic implementation code. The _generic argument_
-//! is given first, followed by a right arrow (`->`) and a list of type arguments.
+//! ## Compositions
+//! `trait_gen` also replaces the content of inner attributes, so it's possible to chain them
+//! and extend the previous implementation to references and smart pointers:
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
-//! # struct Type1; struct Type2; struct Type3;
-//! # trait Trait {}
-//! #[trait_gen(T -> Type1, Type2, Type3)]
-//! impl Trait for T {
-//!     // ...
-//! }
-//! ```
-//!
-//! The attribute macro successively substitutes the generic argument `T` in the code with
-//! the following types (`Type1`, `Type2`, `Type3`) to generate all the implementations.
-//!
-//! All the [type paths](https://doc.rust-lang.org/reference/paths.html#paths-in-types) beginning with `T`
-//! in the code have this part replaced. For example, `T::default()` generates `Type1::default()`,
-//! `Type2::default()` and so on, but `super::T` is unchanged because it belongs to another scope.
-//!
-//! The code must be compatible with all the types, or the compiler will trigger the relevant
-//! errors. For example `#[trait_gen(T -> u64, f64)]` cannot be applied to `let x: T = 0;` because `0`
-//! is not a valid floating-point literal.
-//!
-//! Finally, the actual type of `T` replaces any `${T}` occurrence in doc comments, macros, and string literals.
-//!
-//! _Notes:_
-//! - _Using the letter "T" is not mandatory; any type path will do. For example, `g::Type` is fine
-//! too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers
-//! are preferred._
-//! - _Two or more attributes can be chained to generate all the combinations._
-//! - _`trait_gen` isn't restricted to trait implementations: it can be used on type implementations too._
-//! - _`type_gen` is a synonym attribute that can be used instead of `trait_gen` when the `type_gen` feature
-//!   is enabled (it requires `use trait_gen::type_gen`)_.
-//!
-//! For more examples, look at the [README.md](https://github.com/blueglyph/trait_gen/blob/v1.2.0/README.md)
-//! or the crate [integration tests](https://github.com/blueglyph/trait_gen/blob/v1.2.0/tests/integration.rs).
-//!
-//! ## Conditional Code
-//!
-//! The use of conditional inclusion of code offers more flexibility in the implementation. Within a trait-gen
-//! implementation, the pseudo-attribute `#[trait_gen_if(T in Type1, Type2, Type3]` disables the attached
-//! code if `T` isn't in the list of types.
-//!
-//! Here is an example:
-//!
-//! ```rust
-//! # use trait_gen::{trait_gen, trait_gen_if};
-//!
-//! trait Binary {
-//!     const DECIMAL_DIGITS: usize;
-//!     const SIGN: bool = false;
-//!     fn display_length() -> usize;
-//!     fn try_neg(self) -> Option<Self> where Self: Sized { None }
-//! }
-//!
-//! #[trait_gen(T -> i8, u8, i32, u32)]
-//! impl Binary for T {
-//!     #[trait_gen_if(T in i8, u8)]
-//!     const DECIMAL_DIGITS: usize = 3;
-//!     #[trait_gen_if(T in i32, u32)]
-//!     const DECIMAL_DIGITS: usize = 10;
-//!     #[trait_gen_if(T in i8, i32)]
-//!     const SIGN: bool = true;
-//!
-//!     fn display_length() -> usize {
-//!         Self::DECIMAL_DIGITS + if T::SIGN { 1 } else { 0 }
-//!     }
-//!
-//!     #[trait_gen_if(T in i8, i32)]
-//!     fn try_neg(self) -> Option<Self> {
-//!         Some(-self)
+//! # trait MyLog { fn my_log2(self) -> u32; }
+//! # #[trait_gen(T -> u8, u16, u32, u64, u128)]
+//! # impl MyLog for T {
+//! #     fn my_log2(self) -> u32 {
+//! #         T::BITS - 1 - self.leading_zeros()
+//! #     }
+//! # }
+//! #[trait_gen(T -> u8, u16, u32, u64, u128)]
+//! #[trait_gen(U -> &T, &mut T, Box<T>)]
+//! impl MyLog for U {
+//!     /// Logarithm base 2 for `${U}`
+//!     fn my_log2(self) -> u32 {
+//!         MyLog::my_log2(*self)
 //!     }
 //! }
 //! ```
 //!
-//! The arguments can be placed on either side of `in`, so you can also use it to compare
-//! arguments, as shown below. Note the `!T in U`, which means the code is enabled when
-//! `T` is *not* in the given list, so here when `T != U`.
+//! ## Tuples and Conditional Code
+//! A more concise format can be used for compositions when the type lists are the same for
+//! several arguments (in other words, _permutations with repetitions_, or _tuples_):
+//!
+//! ```rust,ignore
+//! #[trait_gen(T, U -> u8, u16, u32)]
+//! ```
+//!
+//! In the following example, we also show the conditional attribute `trait_gen_if`, which
+//! offers more flexibility in the implementations. The condition has the general format
+//! `<argument> in <types>`, or its negation, `!<argument> in <types>`. The code is respectively
+//! included or skipped when the argument is identical to one of the types.
 //!
 //! ```rust
 //! use trait_gen::{trait_gen, trait_gen_if};
 //!
-//! trait TypeEq<U> {
-//!     fn same_type(&self, other: &U) -> bool;
-//! }
+//! #[derive(Clone, PartialEq, Debug)]
+//! struct Wrapper<T>(T);
 //!
-//! #[trait_gen(T -> u8, u16, u32)]
-//! #[trait_gen(U -> u8, u16, u32)]
-//! impl TypeEq<U> for T {
-//!     #[trait_gen_if(T in U)]
-//!     fn same_type(&self, _other: &U) -> bool {
-//!         true
-//!     }
-//!     #[trait_gen_if(!T in U)]
-//!     fn same_type(&self, _other: &U) -> bool {
-//!         false
+//! #[trait_gen(T, U -> u8, u16, u32)]
+//! // The types T and U must be different to avoid the compilation error
+//! // "conflicting implementation in crate `core`: impl<T> From<T> for T"
+//! #[trait_gen_if(!T in U)]
+//! impl From<Wrapper<U>> for Wrapper<T> {
+//!     /// converts ${U} to ${T}
+//!     fn from(value: Wrapper<U>) -> Self {
+//!         Wrapper(T::try_from(value.0)
+//!             .expect(&format!("overflow when converting {} to ${T}", value.0)))
 //!     }
 //! }
 //! ```
 //!
-//! We've seen earlier that `type_gen` was a synonym of `trait_gen`. For the sake of coherency, a
-//! `type_gen_if` is also provided as a synonym of `trait_gen_if`.
+//! which will give us all the conversions from/to `u8`, `u16`, and `u32`, except from the
+//! same type since they're already covered by the blanket implementation in the standard library.
+//!
+//! _Notes:_
+//! - _The number of generic arguments is not limited in this particular form, though it's arguably 
+//! hard to find relevant cases where more than two are required._
+//! - _We've seen earlier that `type_gen` was a synonym of `trait_gen`. For the sake of
+//! coherency, a `type_gen_if` is provided as a synonym of `trait_gen_if`, too._
+//!
+//! ## Other Permutations
+//! The implementation above could have been written more concisely with a _2-permutation_, where
+//! `T != U`:
+//!
+//! ```rust
+//! # use trait_gen::trait_gen;
+//! #
+//! # #[derive(Clone, PartialEq, Debug)]
+//! # struct Wrapper<T>(T);
+//! #
+//! #[trait_gen(T != U -> u8, u16, u32)]
+//! impl From<Wrapper<U>> for Wrapper<T> {
+//!     /// converts ${U} to ${T}
+//!     fn from(value: Wrapper<U>) -> Self {
+//!         Wrapper(T::try_from(value.0)
+//!             .expect(&format!("overflow when converting {} to ${T}", value.0)))
+//!     }
+//! }
+//! ```
+//!
+//! If we want to generate all the conversions from smaller integers to bigger integers,
+//! similarly to what is done in the [standard library](https://github.com/rust-lang/rust/blob/1.86.0/library/core/src/convert/num.rs#L514-L526)
+//! (with a cascade of declarative macros), we can use a _2-permutation with strict order_,
+//! meaning that `index(T) < index(U)`—remember we can't convert to the same type
+//! because it conflicts with the blanket implementation in `core`.
+//!
+//! This will generate the code for `(T, U)` = `(u8, u16)`, `(u8, u32)`, and `(u16, u32)`
+//! (picture a triangle):
+//!
+//! ```rust
+//! # use trait_gen::trait_gen;
+//! #
+//! # #[derive(Clone, PartialEq, Debug)]
+//! # struct Wrapper<T>(T);
+//! #
+//! #[trait_gen(T !< U -> u8, u16, u32)]
+//! impl From<Wrapper<T>> for Wrapper<U> {
+//!     /// converts Wrapper<${T}> to Wrapper<${U}>
+//!     fn from(value: Wrapper<T>) -> Self {
+//!         Wrapper(U::from(value.0))
+//!     }
+//! }
+//! ```
+//!
+//!
+//! The _non-strict order_, where `index(T) <= index(U)`, also exists for cases like
+//! adding from another integer which has a smaller or equal length. This will generate
+//! the code for `(T, U)` = `(u8, u8)`, `(u8, u16)`, `(u8, u32)`, `(u16, u16)`, `(u16, u32)`,
+//! and `(u32, u32)`.
+//!
+//! ```rust
+//! # use std::ops::Add;
+//! # use trait_gen::trait_gen;
+//! #
+//! # #[derive(Clone, PartialEq, Debug)]
+//! # struct Wrapper<T>(T);
+//! #
+//! #[trait_gen(T =< U -> u8, u16, u32)]
+//! impl Add<Wrapper<T>> for Wrapper<U> {
+//!     type Output = Wrapper<U>;
+//!
+//!     fn add(self, rhs: Wrapper<T>) -> Self::Output {
+//!         Wrapper::<U>(self.0 + <U>::from(rhs.0))
+//!     }
+//! }
+//! ```
+//!
+//! _Notes:_
+//! - _`!=`, `!<`, and `=<` are limited to two generic arguments._
+//! - _`<` and `<=` would have been more intuitive symbols than `!<` and `=<`, but the arguments
+//! being types, it's hard for the compiler to tell, in `T < U`, if `T < U` is the beginning of a
+//! type `T<U>` or a type `T` followed by the comparison symbol `<` (spaces don't count)._
+//!
+//! That covers all the forms of these attributes. For more examples, look at the crate's 
+//! [integration tests](https://github.com/blueglyph/trait_gen/blob/v2.0.0/tests/integration.rs).
 //!
 //! ## Limitations
 //!
@@ -155,13 +225,6 @@
 //! because of the generic function:
 //!
 //!   ```rust, ignore
-//!   # use num::Num;
-//!   # use trait_gen::trait_gen;
-//!   #
-//!   # trait AddMod {
-//!   #     type Output;
-//!   #     fn add_mod(self, rhs: Self, modulo: Self) -> Self::Output;
-//!   # }
 //!   #[trait_gen(T -> u64, i64, u32, i32)]
 //!   impl AddMod for T {
 //!       type Output = T;
@@ -255,7 +318,7 @@ enum ArgType {
     ///
     /// - `#[trait_gen_if(T in U)`
     Cond(Type),
-    /// List of arguments from which all permutations with repetition in a list are generated 
+    /// List of arguments from which all permutations with repetition in a list are generated
     /// (it can have one or more arguments).
     ///
     /// The types in the list are not verified, so if the same type is present multiple times in the list,
@@ -858,7 +921,7 @@ fn parse_parameters(input: ParseStream, is_conditional: bool)
             ArgType::Tuples(list_args)
         } else if input.peek(Token![!]) && input.parse::<Token![!]>().is_ok() {
             if input.peek(Token![=]) && input.parse::<Token![=]>().is_ok() {
-                ArgType::Permutations(path1, input.parse::<Path>()?)
+            ArgType::Permutations(path1, input.parse::<Path>()?)
             } else {
                 input.parse::<Token![<]>()?;
                 ArgType::StrictOrder(path1, input.parse::<Path>()?)
@@ -868,8 +931,8 @@ fn parse_parameters(input: ParseStream, is_conditional: bool)
                 input.parse::<Token![<]>()?;
                 ArgType::NonStrictOrder(path1, input.parse::<Path>()?)
             } else {
-                // that something else must be '->', so we return a single "normal" argument
-                ArgType::Tuples(vec![path1])
+            // that something else must be '->', so we return a single "normal" argument
+            ArgType::Tuples(vec![path1])
             }
         }
     };
