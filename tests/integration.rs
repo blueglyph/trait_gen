@@ -42,7 +42,7 @@ mod simple_formats {
 }
 
 /// Tests the `#[trait_gen(A, B -> u8, u16)]` format
-mod advanced_format_all {
+mod advanced_format_tuple {
     use std::ops::Add;
     use trait_gen::{trait_gen};
 
@@ -75,7 +75,7 @@ mod advanced_format_all {
 }
 
 /// Tests the `#[trait_gen(T != U -> u8, u16, u32)]` format
-mod advanced_format_diff {
+mod advanced_format_permutation {
     use trait_gen::trait_gen;
 
     #[derive(Clone, PartialEq, Debug)]
@@ -107,7 +107,7 @@ mod advanced_format_diff {
 }
 
 /// Tests the `#[trait_gen(T !< U -> u8, u16, u32)]` format
-mod advanced_format_exclusive {
+mod advanced_format_strict_order {
     use trait_gen::trait_gen;
 
     #[derive(Clone, PartialEq, Debug)]
@@ -134,7 +134,7 @@ mod advanced_format_exclusive {
 }
 
 /// Tests the `#[trait_gen(T =< U -> u8, u16, u32)]` format
-mod advanced_format_inclusive {
+mod advanced_format_non_strict_order {
     use std::ops::Add;
     use trait_gen::trait_gen;
 

@@ -255,7 +255,11 @@ enum ArgType {
     ///
     /// - `#[trait_gen_if(T in U)`
     Cond(Type),
-    /// List of arguments from which all combinations in a list are generated (can have more than 2 arguments).
+    /// List of arguments from which all permutations with repetition in a list are generated 
+    /// (it can have one or more arguments).
+    ///
+    /// The types in the list are not verified, so if the same type is present multiple times in the list,
+    /// instances where the two arguments have the same type will be generated.
     ///
     /// Example:
     /// - `#[trait_gen(T -> u8, u16)]`
@@ -264,40 +268,43 @@ enum ArgType {
     /// - `#[trait_gen(T, U -> u8, u16, u32)]`
     ///
     ///   (T, U) = (u8, u8), (u8, u16), (u8, u32), (u16, u8), (u16, u16), (u16, u32) , ...
+    Tuples(Vec<Path>),
+    /// Pair of arguments from which all 2-permutations in a list are generated.
     ///
-    All(Vec<Path>),
-    /// Pair of arguments from which all combinations of different positions in a list (2-permutations) are generated.
-    ///
-    /// The types themselves are not verified, so if the same type is present multiple times in the list,
+    /// The types in the list are not verified, so if the same type is present multiple times in the list,
     /// instances where the two arguments have the same type will be generated.
     ///
     /// Example:
     /// - `#[trait_gen(T != U -> u8, u16, u32)]`
     ///
     ///   (T, U) = (u8, u16), (u8, u32), (u16, u8), (u16, u32), (u32, u8), (u32, u16)
-    Diff(Path, Path),
-    /// Pair of arguments from which all combinations in a list are generated, where
-    /// - the two positions in the list are different
-    /// - the position of the first argument is lower than the position of the second
+    Permutations(Path, Path),
+    /// Pair of arguments from which all 2-permutations in a list with strict order are generated.
+    /// In other words, the position of the first argument is lower than the position of the second.
     /// A typical use is when you can safely combine integers with fewer bits into an integer with more bits
     /// but not the other way around.
+    ///
+    /// The types in the list are not verified, so if the same type is present multiple times in the list,
+    /// instances where the two arguments have the same type will be generated.
     ///
     /// Example:
     /// - `#[trait_gen(T !< U -> u8, u16, u32)]`
     ///
     ///   (T, U) = (u8, u16), (u8, u32), (u16, u32)
-    Exclusive(Path, Path),
-    /// Pair of arguments from which all combinations in a list are generated, where
-    /// - the two positions in the list are different
-    /// - the position of the first argument is lower than or equal to the position of the second
+    StrictOrder(Path, Path),
+    /// Pair of arguments from which all 2-permutations in a list with non-strict order are generated.
+    /// In other words, the position of the first argument is lower than or equal to the position of the second.
     /// A typical use is when you can safely convert an integer with fewer bits to an integer with
     /// at least as many bits but not the other way around.
+    ///
+    /// The types in the list are not verified, so if the same type is present multiple times in the list,
+    /// instances where the two arguments have the same type will be generated.
     ///
     /// Example:
     /// - `#[trait_gen(T =< U -> u8, u16, u32)]`
     ///
     ///   (T, U) = (u8, u8), (u8, u16), (u8, u32), (u16, u16), (u16, u32), (u32, u32)
-    Inclusive(Path, Path),
+    NonStrictOrder(Path, Path),
 }
 
 impl ToTokens for ArgType {
@@ -305,20 +312,20 @@ impl ToTokens for ArgType {
         match self {
             ArgType::None => {}
             ArgType::Cond(ty) => ty.to_tokens(tokens),
-            ArgType::All(paths) => tokens.append_separated(paths, Punct::new(',', Spacing::Alone)),
-            ArgType::Diff(path1, path2) => {
+            ArgType::Tuples(paths) => tokens.append_separated(paths, Punct::new(',', Spacing::Alone)),
+            ArgType::Permutations(path1, path2) => {
                 path1.to_tokens(tokens);
                 tokens.append(Punct::new('!', Spacing::Joint));
                 tokens.append(Punct::new('=', Spacing::Alone));
                 path2.to_tokens(tokens);
             }
-            ArgType::Exclusive(path1, path2) => {
+            ArgType::StrictOrder(path1, path2) => {
                 path1.to_tokens(tokens);
                 tokens.append(Punct::new('!', Spacing::Joint));
                 tokens.append(Punct::new('<', Spacing::Alone));
                 path2.to_tokens(tokens);
             }
-            ArgType::Inclusive(path1, path2) => {
+            ArgType::NonStrictOrder(path1, path2) => {
                 path1.to_tokens(tokens);
                 tokens.append(Punct::new('=', Spacing::Joint));
                 tokens.append(Punct::new('<', Spacing::Alone));
@@ -333,10 +340,10 @@ impl Debug for ArgType {
         match self {
             ArgType::None => write!(f, "None"),
             ArgType::Cond(c) => write!(f, "Cond({})", pathname(c)),
-            ArgType::All(a) => write!(f, "All({})", a.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")),
-            ArgType::Diff(p1, p2) => write!(f, "Diff({}, {})", pathname(p1), pathname(p2)),
-            ArgType::Exclusive(p1, p2) => write!(f, "Exclusive({}, {})", pathname(p1), pathname(p2)),
-            ArgType::Inclusive(p1, p2) => write!(f, "Inclusive({}, {})", pathname(p1), pathname(p2)),
+            ArgType::Tuples(a) => write!(f, "Tuples({})", a.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")),
+            ArgType::Permutations(p1, p2) => write!(f, "Permutations({}, {})", pathname(p1), pathname(p2)),
+            ArgType::StrictOrder(p1, p2) => write!(f, "StrictOrder({}, {})", pathname(p1), pathname(p2)),
+            ArgType::NonStrictOrder(p1, p2) => write!(f, "NonStrictOrder({}, {})", pathname(p1), pathname(p2)),
         }
     }
 }
@@ -848,21 +855,21 @@ fn parse_parameters(input: ParseStream, is_conditional: bool)
                     break;
                 }
             }
-            ArgType::All(list_args)
+            ArgType::Tuples(list_args)
         } else if input.peek(Token![!]) && input.parse::<Token![!]>().is_ok() {
             if input.peek(Token![=]) && input.parse::<Token![=]>().is_ok() {
-                ArgType::Diff(path1, input.parse::<Path>()?)
+                ArgType::Permutations(path1, input.parse::<Path>()?)
             } else {
                 input.parse::<Token![<]>()?;
-                ArgType::Exclusive(path1, input.parse::<Path>()?)
+                ArgType::StrictOrder(path1, input.parse::<Path>()?)
             }
         } else {
             if input.peek(Token![=]) && input.parse::<Token![=]>().is_ok() {
                 input.parse::<Token![<]>()?;
-                ArgType::Inclusive(path1, input.parse::<Path>()?)
+                ArgType::NonStrictOrder(path1, input.parse::<Path>()?)
             } else {
                 // that something else must be '->', so we return a single "normal" argument
-                ArgType::All(vec![path1])
+                ArgType::Tuples(vec![path1])
             }
         }
     };
@@ -1016,7 +1023,7 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut output = TokenStream::new();
     let args = std::mem::take(&mut attribute.args);
     match &args {
-        ArgType::All(paths) => {
+        ArgType::Tuples(paths) => {
             // generates all the permutations
             let mut subst = Subst::from_trait_gen(attribute.clone(), paths[0].clone());
             let types = std::mem::take(&mut subst.types);
@@ -1049,18 +1056,17 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
                 if values.is_empty() { break }
             }
         }
-        
-        ArgType::Diff(path1, path2) | ArgType::Exclusive(path1, path2) | ArgType::Inclusive(path1, path2) => {
+        ArgType::Permutations(path1, path2) | ArgType::StrictOrder(path1, path2) | ArgType::NonStrictOrder(path1, path2) => {
             // we could translate the attribute into simple attributes using conditionals, but it's
-            // easier, lighter, and safer to simply generate the combinations
+            // easier, lighter, and safer to simply generate and filter the combinations
             let (_, types) = to_subst_types(attribute.types.clone());
             let mut subst = Subst::from_trait_gen(attribute.clone(), path1.clone());
             for (i1, p1) in types.iter().enumerate() {
                 for (i2, p2) in types.iter().enumerate() {
                     let cond = match &args {
-                        ArgType::Diff(_, _) => i1 != i2,
-                        ArgType::Exclusive(_, _) => i1 < i2,
-                        ArgType::Inclusive(_, _) => i1 <= i2,
+                        ArgType::Permutations(_, _) => i1 != i2,
+                        ArgType::StrictOrder(_, _) => i1 < i2,
+                        ArgType::NonStrictOrder(_, _) => i1 <= i2,
                         _ => panic!("can't happen")
                     };
                     if cond {
