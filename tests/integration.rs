@@ -74,6 +74,38 @@ mod advanced_format_tuple {
     }
 }
 
+mod advanced_format_permutation_long {
+    use trait_gen::{trait_gen, trait_gen_if};
+
+    #[derive(Clone, PartialEq, Debug)]
+    struct Wrapper<T>(T);
+
+    // The type must be different to avoid the error "conflicting implementation in crate `core`: impl<T> From<T> for T"
+    #[trait_gen(T, U -> u8, u16, u32)]
+    #[trait_gen_if(!T in U)]
+    impl From<Wrapper<U>> for Wrapper<T> {
+        /// converts ${U} to ${T}
+        fn from(value: Wrapper<U>) -> Self {
+            Wrapper(T::try_from(value.0).expect(&format!("overflow when converting {} to ${T}", value.0)))
+        }
+    }
+
+    #[test]
+    fn test() {
+        // other combinations would trigger the "conflicting implementation" error,
+        // so no need to explicitly test they're not implemented
+        assert_eq!(Wrapper::<u8>::from(Wrapper(10_u8)), Wrapper(10_u8));
+        assert_eq!(Wrapper::<u16>::from(Wrapper(10_u8)), Wrapper(10_u16));
+        assert_eq!(Wrapper::<u32>::from(Wrapper(10_u8)), Wrapper(10_u32));
+        assert_eq!(Wrapper::<u8>::from(Wrapper(20_u16)), Wrapper(20_u8));
+        assert_eq!(Wrapper::<u16>::from(Wrapper(20_u16)), Wrapper(20_u16));
+        assert_eq!(Wrapper::<u32>::from(Wrapper(20_u16)), Wrapper(20_u32));
+        assert_eq!(Wrapper::<u8>::from(Wrapper(30_u32)), Wrapper(30_u8));
+        assert_eq!(Wrapper::<u16>::from(Wrapper(30_u32)), Wrapper(30_u16));
+        assert_eq!(Wrapper::<u32>::from(Wrapper(30_u32)), Wrapper(30_u32));
+    }
+}
+
 /// Tests the `#[trait_gen(T != U -> u8, u16, u32)]` format
 mod advanced_format_permutation {
     use trait_gen::trait_gen;
@@ -215,8 +247,7 @@ mod conditional_code {
         }
     }
 
-    #[trait_gen(A -> Metre, Foot)]
-    #[trait_gen(B -> Metre, Foot)]
+    #[trait_gen(A, B -> Metre, Foot)]
     impl Add<B> for A {
         type Output = A;
 
@@ -251,8 +282,14 @@ mod conditional_code2 {
     trait Binary {
         const DECIMAL_DIGITS: usize;
         const SIGN: bool = false;
-        fn display_length() -> usize;
-        fn try_neg(self) -> Option<Self> where Self: Sized { None }
+
+        fn display_length() -> usize {
+            Self::DECIMAL_DIGITS + if Self::SIGN { 1 } else { 0 }
+        }
+
+        fn try_neg(self) -> Option<Self> where Self: Sized {
+            None
+        }
     }
     
     #[trait_gen(T -> i8, u8, i32, u32)]
@@ -264,10 +301,6 @@ mod conditional_code2 {
         #[trait_gen_if(T in i8, i32)]
         const SIGN: bool = true;
      
-        fn display_length() -> usize {
-            Self::DECIMAL_DIGITS + if T::SIGN { 1 } else { 0 }
-        }
-    
         #[trait_gen_if(T in i8, i32)]
         fn try_neg(self) -> Option<Self> {
             Some(-self)
@@ -295,8 +328,7 @@ mod conditional_code3 {
         fn same_type(&self, other: &U) -> bool;
     }
     
-    #[trait_gen(T -> u8, u16, u32)]
-    #[trait_gen(U -> u8, u16, u32)]
+    #[trait_gen(T, U -> u8, u16, u32)]
     impl TypeEq<U> for T {
         #[trait_gen_if(T in U)]
         fn same_type(&self, _other: &U) -> bool {
@@ -374,7 +406,6 @@ mod type_case_02 {
     #[trait_gen(T -> u8, u16, u32, u64, u128)]
     impl MyLog for T {
         fn my_log2(self) -> u32 {
-
             T::BITS - 1 - self.leading_zeros()
         }
     }
@@ -1283,7 +1314,7 @@ mod impl_type_02 {
     }
 }
 
-#[cfg(feature = "type_gen")]
+#[cfg(not(feature = "no_type_gen"))]
 mod type_gen {
     use trait_gen::{type_gen, type_gen_if};
 
