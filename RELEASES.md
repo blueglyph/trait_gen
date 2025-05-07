@@ -1,3 +1,7 @@
+# 2.0.1 (2025-05-07)
+
+- fix a few lint issues
+
 # 2.0.0 (2025-05-07)
 
 - add several permutation formats for typical use-cases:

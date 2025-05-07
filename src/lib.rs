@@ -410,7 +410,7 @@ impl Debug for ArgType {
         match self {
             ArgType::None => write!(f, "None"),
             ArgType::Cond(c) => write!(f, "Cond({})", pathname(c)),
-            ArgType::Tuple(a) => write!(f, "Tuple({})", a.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")),
+            ArgType::Tuple(a) => write!(f, "Tuple({})", a.iter().map(pathname).collect::<Vec<_>>().join(", ")),
             ArgType::Permutation(p1, p2) => write!(f, "Permutation({}, {})", pathname(p1), pathname(p2)),
             ArgType::StrictOrder(p1, p2) => write!(f, "StrictOrder({}, {})", pathname(p1), pathname(p2)),
             ArgType::NonStrictOrder(p1, p2) => write!(f, "NonStrictOrder({}, {})", pathname(p1), pathname(p2)),
@@ -495,7 +495,7 @@ impl Subst {
     fn get_example_types(&self) -> String {
         // This is called for error messages, which happen only during the first visit_mut pass over
         // the inner attributes: we know that Subst still has all the types in `self.new_types`.
-        let mut examples = self.types.iter().map(|t| pathname(t)).take(3).collect::<Vec<_>>();
+        let mut examples = self.types.iter().map(pathname).take(3).collect::<Vec<_>>();
         while examples.len() < 3 {
             examples.push(format!("Type{}", examples.len() + 1));
         }
@@ -507,7 +507,7 @@ impl Debug for Subst {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "PathTypes {{ generic_arg: {}, types: [{}], is_path: {}, enabled: {} }}",
                pathname(&self.generic_arg),
-               self.types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", "),
+               self.types.iter().map(pathname).collect::<Vec<_>>().join(", "),
                self.is_path,
                self.can_subst_path.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
         )
@@ -752,7 +752,7 @@ impl VisitMut for Subst {
                 &format!("${{{}}}", pathname(&self.generic_arg)),
                 &pathname(self.types.first().unwrap()))
             {
-                let new_lit: LitStr = parse_str(&ts_str).expect(&format!("parsing LitStr failed: {}", ts_str));
+                let new_lit: LitStr = parse_str(&ts_str).unwrap_or_else(|_| panic!("parsing LitStr failed: {}", ts_str));
                 node.lit = Lit::Str(new_lit);
             } else {
                 syn::visit_mut::visit_expr_lit_mut(self, node);
@@ -794,7 +794,7 @@ impl VisitMut for Subst {
             &format!("${{{}}}", pathname(&self.generic_arg)),
             &pathname(self.types.first().unwrap()))
         {
-            let new_ts: proc_macro2::TokenStream = ts_str.parse().expect(&format!("parsing Macro failed: {}", ts_str));
+            let new_ts: proc_macro2::TokenStream = ts_str.parse().unwrap_or_else(|_| panic!("parsing Macro failed: {}", ts_str));
             node.tokens = new_ts;
         } else {
             syn::visit_mut::visit_macro_mut(self, node);
@@ -957,8 +957,8 @@ fn parse_parameters(input: ParseStream, is_conditional: bool) -> syn::parse::Res
         if input.peek(token::Bracket) {
             let content;
             bracketed!(content in input);
-            let inner_vars: ParseStream = &content.into();
-            Punctuated::<Type, Token![,]>::parse_terminated(&inner_vars)?
+            let inner_vars: ParseStream = &content;
+            Punctuated::<Type, Token![,]>::parse_terminated(inner_vars)?
         } else {
             Punctuated::<Type, Token![,]>::parse_terminated(input)?
         }
@@ -1002,7 +1002,7 @@ fn substitute(item: TokenStream, mut types: Subst) -> TokenStream {
                  "=".repeat(80),
                  pathname(&types.generic_arg),
                  if types.is_path { "PATH" } else { "TYPE" },
-                 &types.types.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")
+                 &types.types.iter().map(pathname).collect::<Vec<_>>().join(", ")
         )
     }
     if VERBOSE || VERBOSE_TF { println!("\n{}\n{}", item, "-".repeat(80)); }
