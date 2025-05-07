@@ -131,7 +131,7 @@
 //! // "conflicting implementation in crate `core`: impl<T> From<T> for T"
 //! #[trait_gen_if(!T in U)]
 //! impl From<Wrapper<U>> for Wrapper<T> {
-//!     /// converts ${U} to ${T}
+//!     /// converts Wrapper<${U}> to Wrapper<${T}>
 //!     fn from(value: Wrapper<U>) -> Self {
 //!         Wrapper(T::try_from(value.0)
 //!             .expect(&format!("overflow when converting {} to ${T}", value.0)))
@@ -162,7 +162,7 @@
 //! #
 //! #[trait_gen(T != U -> u8, u16, u32)]
 //! impl From<Wrapper<U>> for Wrapper<T> {
-//!     /// converts ${U} to ${T}
+//!     /// converts Wrapper<${U}> to Wrapper<${T}>
 //!     fn from(value: Wrapper<U>) -> Self {
 //!         Wrapper(T::try_from(value.0)
 //!             .expect(&format!("overflow when converting {} to ${T}", value.0)))

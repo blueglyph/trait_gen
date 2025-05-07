@@ -27,8 +27,10 @@ but it can also be used for any generic implementation.
 Here is a simple example:
 
 ```rust
-# use trait_gen::trait_gen;
-# trait MyLog { fn my_log2(self) -> u32; }
+use trait_gen::trait_gen;
+
+trait MyLog { fn my_log2(self) -> u32; }
+
 #[trait_gen(T -> u8, u16, u32, u64, u128)]
 impl MyLog for T {
     fn my_log2(self) -> u32 {
@@ -75,7 +77,7 @@ struct Wrapper<T>(T);
 // "conflicting implementation in crate `core`: impl<T> From<T> for T"
 #[trait_gen_if(!T in U)]
 impl From<Wrapper<U>> for Wrapper<T> {
-    /// converts ${U} to ${T}
+    /// converts Wrapper<${U}> to Wrapper<${T}>
     fn from(value: Wrapper<U>) -> Self {
         Wrapper(T::try_from(value.0)
             .expect(&format!("overflow when converting {} to ${T}", value.0)))
@@ -145,4 +147,4 @@ The `trait-gen` crate is tested for Rust versions **1.61.0** and stable on Windo
 
 # Licence
 
-This code is licensed under either [MIT License](https://choosealicense.com/licenses/mit/) or [Apache License 2.0](https://choosealicense.com/licenses/apache-2.0/), at your option.
+This code is licenced under either [MIT License](https://choosealicense.com/licenses/mit/) or [Apache License 2.0](https://choosealicense.com/licenses/apache-2.0/), at your option.
