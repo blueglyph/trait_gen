@@ -51,6 +51,10 @@
 - remove the legacy format
 - the generic argument must now have the turbofish format if `<..>` is required. Use `#[trait_gen(T::<U> -> ...)` and not `#[trait_gen(T<U> -> ...)`.
 
+# 1.2.1 (2025-05-06)
+
+- fix a bug with the attribute name when the "type_gen" feature is disabled.
+
 # 1.2.0 (2025-05-02)
 
 - add negation in 'trait_gen_if' (the `!` must be in first position after the opening parenthesis):

@@ -145,7 +145,7 @@
 //! implementated type.
 //!
 //! _Notes:_
-//! - _The number of generic arguments is not limited in this particular form, though it's arguably 
+//! - _The number of generic arguments is not limited in this particular form, though it's arguably
 //! hard to find relevant cases where more than two are required._
 //! - _We've seen earlier that `type_gen` was a synonym of `trait_gen`. For the sake of
 //! coherency, a `type_gen_if` is provided as a synonym of `trait_gen_if`, too._
@@ -220,7 +220,7 @@
 //! _Notes:_
 //! - _`!=`, `<`, and `<=` are limited to two generic arguments._
 //!
-//! That covers all the forms of these attributes. For more examples, look at the crate's 
+//! That covers all the forms of these attributes. For more examples, look at the crate's
 //! [integration tests](https://github.com/blueglyph/trait_gen/blob/v2.0.0/tests/integration.rs).
 //!
 //! ## Limitations
@@ -1091,7 +1091,7 @@ fn substitute(item: TokenStream, mut types: Subst) -> TokenStream {
 pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut attribute = match syn::parse::<TraitGen>(args) {
         Ok(types) => types,
-        Err(err) => abort!(err.span(), err; 
+        Err(err) => abort!(err.span(), err;
             help = "The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]"),
     };
     let mut output = TokenStream::new();
