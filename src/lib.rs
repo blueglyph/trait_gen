@@ -86,7 +86,7 @@
 //!
 //! ## Compositions
 //! `trait_gen` also replaces the content of inner attributes, so it's possible to chain them
-//! and extend the previous implementation to references and smart pointers:
+//! and extend the above example to references and smart pointers:
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
@@ -107,9 +107,9 @@
 //! }
 //! ```
 //!
-//! ## Tuples and Conditional Code
-//! A more concise format can be used for compositions when the type lists are the same for
-//! several arguments (in other words, _permutations with repetitions_, or _tuples_):
+//! ## Tuples and Conditional Generation
+//! A more concise format can be used when several arguments share the type lists (in other
+//! words, when we need _permutations with repetitions_, or _tuples_):
 //!
 //! ```rust,ignore
 //! #[trait_gen(T, U -> u8, u16, u32)]
@@ -141,6 +141,8 @@
 //!
 //! which will give us all the conversions from/to `u8`, `u16`, and `u32`, except from the
 //! same type since they're already covered by the blanket implementation in the standard library.
+//! It's also very useful for selecting constants or removing methods depending on the
+//! implementated type.
 //!
 //! _Notes:_
 //! - _The number of generic arguments is not limited in this particular form, though it's arguably 
