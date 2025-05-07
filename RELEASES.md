@@ -1,3 +1,56 @@
+# 2.0.0 (2025-05-07)
+
+- add several permutation formats for typical use-cases:
+  - `#[trait_gen(T, U -> u8, u16, u32)]` is a handy shortcut for 
+    ```
+    #[trait_gen(T -> u8, u16, u32)] 
+    #[trait_gen(U -> u8, u16, u32)]
+    ``` 
+  - `#[trait_gen(T != U -> u8, u16, u32)]` does the same but only for T != U, so excluding (u8, u8), (u16, u16), and (u32, u32).
+    ```rust
+    struct Wrapper<T>(T);
+    
+    // The types T and U must be different to avoid the compilation error
+    // "conflicting implementation in crate `core`: impl<T> From<T> for T"
+    #[trait_gen(T != U -> u8, u16, u32)]
+    impl From<Wrapper<U>> for Wrapper<T> {
+        /// converts ${U} to ${T}
+        fn from(value: Wrapper<U>) -> Self {
+            Wrapper(T::try_from(value.0)
+                .expect(&format!("overflow when converting {} to ${T}", value.0)))
+        }
+    }
+    ```
+    
+  - `#[trait_gen(T < U -> u8, u16, u32)]` generates the code for index(T) < index(U) in the given list, so (T, U) = (u8, u16), (u8, u32), (u16, u32). It's the _position_ in the list that counts; e.g. the types are not sorted (on what criterion would they be sorted anyway?) or checked in any way. 
+    ```rust 
+    // `From` is only defined for integers with fewer bits (and we exclude a conversion to
+    // the same type for the same reason as above)
+    #[trait_gen(T < U -> u8, u16, u32)]
+    impl From<Wrapper<T>> for Wrapper<U> {
+        /// converts Wrapper<${T}> to Wrapper<${U}>
+        fn from(value: Wrapper<T>) -> Self {
+            Wrapper(U::from(value.0))
+        }
+    }
+    ```
+
+  - `#[trait_gen(T <= U -> u8, u16, u32)]` generates the code for (T, U) = (u8, u8), (u8, u16), (u8, u32), (u16, u16), (u16, u32), (u32, u32)
+  ```rust
+  // We only want to add integers with fewer bits or of the same type: 
+  #[trait_gen(T <= U -> u8, u16, u32)]
+  impl Add<Wrapper<T>> for Wrapper<U> {
+      type Output = Wrapper<U>;
+  
+      fn add(self, rhs: Wrapper<T>) -> Self::Output {
+          Wrapper::<U>(self.0 + <U>::from(rhs.0))
+      }
+  }
+  ```
+- remove the `in` format, which is now strictly reserved to conditionals
+- remove the legacy format
+- the generic argument must now have the turbofish format if `<..>` is required. Use `#[trait_gen(T::<U> -> ...)` and not `#[trait_gen(T<U> -> ...)`.
+
 # 1.2.0 (2025-05-02)
 
 - add negation in 'trait_gen_if' (the `!` must be in first position after the opening parenthesis):

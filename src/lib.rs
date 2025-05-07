@@ -46,6 +46,9 @@
 //! For example, use `T::<U>` and not `T<U>`._
 //! - _`type_gen` is a synonym attribute that can be used instead of `trait_gen`. This can be disabled with
 //! the `no_type_gen` feature, in case it conflicts with another 3rd-party attribute._
+//! - _There is no escape code to avoid the substitution in string literals; if you need `${T}` for another
+//! purpose and you don't want it to be replaced, you can use this work-around:
+//! `#[doc = concat!("my ${", "T} variable")]`. Or you can choose another generic argument, like `U` or `my::T`._
 //! - _More complex formats with several arguments and conditions are shown in later examples._
 //!
 //! Here is a simple example:
@@ -342,8 +345,9 @@ enum ArgType {
     ///
     ///   (T, U) = (u8, u16), (u8, u32), (u16, u8), (u16, u32), (u32, u8), (u32, u16)
     Permutation(Path, Path),
-    /// Pair of arguments from which all 2-permutations in a list with strict order are generated.
+    /// Pair of arguments from which all 2-permutations with strict order in a list are generated.
     /// In other words, the position of the first argument is lower than the position of the second.
+    ///
     /// A typical use is when you can safely combine integers with fewer bits into an integer with more bits
     /// but not the other way around.
     ///
@@ -351,12 +355,13 @@ enum ArgType {
     /// instances where the two arguments have the same type will be generated.
     ///
     /// Example:
-    /// - `#[trait_gen(T !< U -> u8, u16, u32)]`
+    /// - `#[trait_gen(T < U -> u8, u16, u32)]`
     ///
     ///   (T, U) = (u8, u16), (u8, u32), (u16, u32)
     StrictOrder(Path, Path),
-    /// Pair of arguments from which all 2-permutations in a list with non-strict order are generated.
+    /// Pair of arguments from which all 2-permutations with non-strict order in a list are generated.
     /// In other words, the position of the first argument is lower than or equal to the position of the second.
+    ///
     /// A typical use is when you can safely convert an integer with fewer bits to an integer with
     /// at least as many bits but not the other way around.
     ///
@@ -364,7 +369,7 @@ enum ArgType {
     /// instances where the two arguments have the same type will be generated.
     ///
     /// Example:
-    /// - `#[trait_gen(T =< U -> u8, u16, u32)]`
+    /// - `#[trait_gen(T <= U -> u8, u16, u32)]`
     ///
     ///   (T, U) = (u8, u8), (u8, u16), (u8, u32), (u16, u16), (u16, u32), (u32, u32)
     NonStrictOrder(Path, Path),
@@ -885,26 +890,19 @@ impl VisitMut for Subst {
 
 /// Parses the attribute arguments, and extracts the generic argument and the types that must substitute it.
 ///
-/// There are three syntax formats:
-/// - `T -> Type1, Type2, Type3`
-/// - `T in [Type1, Type2, Type3]` or `T in Type1, Type2, Type3`  (when `in_format_allowed` is true)
-/// - `Type1, Type2, Type3` (legacy format)
+/// There are two main syntax formats:
+/// - `T -> Type1, Type2, Type3` with variations like `T, U -> ...`, `T != U -> ...`, etc.
+/// - `T in [Type1, Type2, Type3]` or `T in Type1, Type2, Type3` (when `is_conditional` is true)
 ///
-/// The `is_conditional` parameter forces the "in" format and allows a negation, "!in". It also returns
-/// a `Type` argument (`SubstType::Type`) instead of a `Path` because the argument will be substituted
-/// by a type by the trait-gen attribute.
+/// The `is_conditional` parameter forces the "in" format and allows a negation, `!T in Type1, Type2, Type3`.
+/// It also returns a `Type` argument (`SubstType::Type`) instead of a `Path` because the trait-gen attribute
+/// will replace it by a type.
 ///
-/// Returns (path, types, format, is_negated), where
-/// - `path` is the generic argument `T` (or `Type1` in legacy format)
-/// - `types` is a vector of parsed `Type` items: `Type1, Type2, Type3` (or `Type2, Type3` in legacy)
-/// - `format` is the attribute format: arrow, legacy, or in
-/// - `is_negated` is true if the `!in` format was found instead of `in` in a conditional
-///
-/// Note: we don't include `Type1` in `types` for the legacy format because the original stream will be copied
-/// in the generated code, so only the remaining types are required for the substitutions.
-fn parse_parameters(input: ParseStream, is_conditional: bool)
-    -> syn::parse::Result<(ArgType, Vec<Type>, bool)>
-{
+/// Returns (args, types, is_negated), where
+/// - `args` contains the generic arguments `T`, `U`, ... and the type of permutation (`,`, `!=`, `<`, or `<=`)
+/// - `types` is a vector of parsed `Type` items: `Type1, Type2, Type3`
+/// - `is_negated` is true if the `!T in` format was found instead of `T in` (when `is_conditional` is true)
+fn parse_parameters(input: ParseStream, is_conditional: bool) -> syn::parse::Result<(ArgType, Vec<Type>, bool)> {
     let is_negated = is_conditional && input.peek(Token![!]) && input.parse::<Token![!]>().is_ok();
     let args = if is_conditional {
         ArgType::Cond(input.parse::<Type>()?)
@@ -1022,8 +1020,9 @@ fn substitute(item: TokenStream, mut types: Subst) -> TokenStream {
 
 /// Generates the attached implementation code for all the types given in argument.
 ///
-/// The attribute is placed before the pseudo-generic implementation code. The _generic argument_
-/// is given first, followed by a right arrow (`->`) and a list of type arguments.
+/// The attribute is placed before the pseudo-generic code to implement. The _generic arguments_
+/// are given first, followed by a right arrow (`->`) and a list of types that will replace the
+/// argument in the generated implementations:
 ///
 /// ```rust
 /// # use trait_gen::trait_gen;
@@ -1036,31 +1035,34 @@ fn substitute(item: TokenStream, mut types: Subst) -> TokenStream {
 /// ```
 ///
 /// The attribute macro successively substitutes the generic argument `T` in the code with
-/// the following types (`Type1`, `Type2`, `Type3`) to generate all the implementations.
+/// the given types (`Type1`, `Type2`, `Type3`) to generate each implementation.
 ///
-/// All the [type paths](https://doc.rust-lang.org/reference/paths.html#paths-in-types) beginning with `T`
-/// in the code have this part replaced. For example, `T::default()` generates `Type1::default()`,
-/// `Type2::default()`, and so on, but `super::T` is unchanged because it belongs to another scope.
+/// All the [type paths](https://doc.rust-lang.org/reference/paths.html#paths-in-types) beginning
+/// with `T` in the code have that part replaced. For example, `T::default()` generates
+/// `Type1::default()`, `Type2::default()` and so on, but `super::T` is unchanged. Similarly, all
+/// the [types](https://doc.rust-lang.org/reference/types.html) including `T` in the code have that
+/// part replaced; for example, `&T` or `Box<T>`.
 ///
-/// The code must be compatible with all the types, or the compiler will trigger the relevant
-/// errors. For example, `#[trait_gen(T -> u64, f64)]` cannot be applied to `let x: T = 0;`, because `0`
-/// is not a valid floating-point literal.
+/// The compiler will trigger an error if the resulting code is wrong. For example
+/// `#[trait_gen(T -> u64, f64)]` cannot be applied to `let x: T = 0;` because `0` is not a valid
+/// floating-point literal.
 ///
-/// The `#[trait_gen_if(T in Type1, Type2, Type3)` can be used to conditionally enable the attached code
-/// if `T` is included in the list of types, or to disable it when it's not included.
-///
-/// Finally, the actual type replaces any `${T}` occurrence in doc comments, macros and string literals.
+/// Finally, the actual type of `T` replaces any occurrence of `${T}` in doc comments, macros, and
+/// string literals.
 ///
 /// _Notes:_
 /// - _Using the letter "T" is not mandatory; any type path will do. For example, `g::Type` is fine
 /// too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers
 /// are preferred._
-/// - _Two or more attributes can be chained to generate all the combinations._
-/// - _`trait_gen` can be used on type implementations too._
-/// - _`type_gen` is a synonym attribute that can be used instead of `trait_gen` when the `type_gen` feature
-///   is enabled (it requires `use trait_gen::type_gen`). Similarly, `type_gen_if` can be used instead of `trait_gen_if`_.
+/// - _If a `<..>` is required in the generic argument, the
+/// [turbofish syntax](https://doc.rust-lang.org/reference/paths.html#r-paths.expr.turbofish) must be used.
+/// For example, use `T::<U>` and not `T<U>`._
+/// - _`type_gen` is a synonym attribute that can be used instead of `trait_gen`. This can be disabled with
+/// the `no_type_gen` feature, in case it conflicts with another 3rd-party attribute._
 ///
-/// ## Examples
+/// See the [crate documentation](crate) for more details.
+///
+/// ## Example
 ///
 /// ```rust
 /// # use trait_gen::trait_gen;

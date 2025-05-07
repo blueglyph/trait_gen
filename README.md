@@ -7,28 +7,28 @@
 
 <!-- TOC -->
 * [The 'trait-gen' Crate](#the-trait-gen-crate)
-  * [Usage](#usage)
-  * [Motivation](#motivation)
-  * [Conditional Code](#conditional-code)
-  * [Examples](#examples)
-  * [IDE Code Awareness](#ide-code-awareness)
-  * [Limitations](#limitations)
+  * [Compositions](#compositions)
+  * [Tuples and Conditional Code](#tuples-and-conditional-code)
+  * [Other features](#other-features)
+* [Motivation](#motivation)
 * [Compatibility](#compatibility)
 * [Releases](#releases)
-* [License](#license)
+* [Licence](#licence)
 <!-- TOC -->
 
 <hr/>
 
 # The 'trait-gen' Crate
 
-This library provides an attribute macro to generate the trait implementations for several types without needing custom declarative macros, code repetition, or blanket implementations. It makes the code easier to read and to maintain.
+This crate provides attribute macros that generate the attached implementation for all the
+types given in argument. It was first intended for trait implementations, hence the crate name,
+but it can also be used for any generic implementation.
 
-Here is a short example:
+Here is a simple example:
 
 ```rust
-use trait_gen::trait_gen;
-
+# use trait_gen::trait_gen;
+# trait MyLog { fn my_log2(self) -> u32; }
 #[trait_gen(T -> u8, u16, u32, u64, u128)]
 impl MyLog for T {
     fn my_log2(self) -> u32 {
@@ -37,56 +37,71 @@ impl MyLog for T {
 }
 ```
 
-The `trait_gen` attribute generates the following code by replacing `T` with the types given as arguments:
+## Compositions
+`trait_gen` also replaces the content of inner attributes, so it's possible to chain them
+and extend the previous implementation to references and smart pointers:
 
 ```rust
-impl MyLog for u8 {
+#[trait_gen(T -> u8, u16, u32, u64, u128)]
+#[trait_gen(U -> &T, &mut T, Box<T>)]
+impl MyLog for U {
+    /// Logarithm base 2 for `${U}`
     fn my_log2(self) -> u32 {
-        u8::BITS - 1 - self.leading_zeros()
+        MyLog::my_log2(*self)
     }
-}
-impl MyLog for u16 {
-    fn my_log2(self) -> u32 {
-        u16::BITS - 1 - self.leading_zeros()
-    }
-}
-// and so on for the remaining types
-```
-
-## Usage
-
-The attribute is placed before the pseudo-generic implementation code. The _generic argument_ is given first, followed by a right arrow (`->`) and a list of type arguments.
-
-```rust
-#[trait_gen(T -> Type1, Type2, Type3)]
-impl Trait for T {
-    // ...
 }
 ```
 
-The attribute macro successively substitutes the generic argument `T` in the code with the following types (`Type1`, `Type2`, `Type3`) to generate all the implementations.
+## Tuples and Conditional Code
 
-All the [type paths](https://doc.rust-lang.org/reference/paths.html#paths-in-types) beginning with `T` in the code have this part replaced. For example, `T::default()` generates `Type1::default()`, `Type2::default()` and so on, but `super::T` is unchanged because it belongs to another scope.
+A more concise format can be used for compositions when the type lists are the same for
+several arguments (in other words, _permutations with repetitions_, or _tuples_):
 
-The code must be compatible with all the types, or the compiler will trigger the relevant errors. For example, `#[trait_gen(T -> u64, f64)]` cannot be applied to `let x: T = 0;` because `0` is not a valid floating-point literal.
+```rust,ignore
+#[trait_gen(T, U -> u8, u16, u32)]
+```
 
-Finally, the actual type replaces any `${T}` occurrence in doc comments, macros, and string literals.
+In the following example, we also show the conditional attribute `trait_gen_if`, which
+offers more flexibility in the implementations. The condition has the general format
+`<argument> in <types>`, or its negation, `!<argument> in <types>`. The code is respectively
+included or skipped when the argument is identical to one of the types.
 
-_Notes:_
-- _Using the letter "T" is not mandatory; any type path will do. For example, `gen::Type` is fine too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers are preferred._
-- _Two or more attributes can be chained to generate all the combinations._
-- _`trait_gen` isn't restricted to trait implementations: it can be used on type implementations too._
-- _`type_gen` is a synonym attribute that can be used instead of `trait_gen` when the `type_gen` feature is enabled (it requires `use trait_gen::type_gen`)_.
+```rust
+use trait_gen::{trait_gen, trait_gen_if};
 
+#[derive(Clone, PartialEq, Debug)]
+struct Wrapper<T>(T);
 
-## Motivation
+#[trait_gen(T, U -> u8, u16, u32)]
+// The types T and U must be different to avoid the compilation error
+// "conflicting implementation in crate `core`: impl<T> From<T> for T"
+#[trait_gen_if(!T in U)]
+impl From<Wrapper<U>> for Wrapper<T> {
+    /// converts ${U} to ${T}
+    fn from(value: Wrapper<U>) -> Self {
+        Wrapper(T::try_from(value.0)
+            .expect(&format!("overflow when converting {} to ${T}", value.0)))
+    }
+}
+```
 
-There are several ways to generate multiple implementations:
-- copy them manually
+which will give us all the conversions from/to `u8`, `u16`, and `u32`, except from the
+same type since they're already covered by the blanket implementation in the standard library.
+
+_Thanks to **Daniel Vigovszky** for giving me this idea! He first implemented it, although differently, in a fork called [conditional_trait_gen](https://github.com/vigoo/conditional_trait_gen). I had pondered about some use-cases that would require such a feature in an old post but never got around to implementing it until version 1.1.0._
+
+## Other features
+
+Please read the [crate documentation](https://docs.rs/trait-gen) for more details.
+
+# Motivation
+
+There are other ways to generate multiple implementations:
+- copy them manually (which is tedious, error-prone, and annoying to maintain)
 - use a declarative macro
 - use a blanket implementation
 
-The example of implementation above could be achieved with this **declarative macro**:
+Using a **declarative macro** would give something like this:
 
 ```rust
 macro_rules! impl_my_log {
@@ -102,288 +117,26 @@ macro_rules! impl_my_log {
 impl_my_log! { u8 u16 u32 u64 u128 }
 ```
 
-But it's noisy and harder to read than native code. We must write a custom macro each time, with its declaration, pattern, and translation of a few elements like the parameters (here, `$t`). Moreover, IDEs can't often provide contextual help or apply refactoring in the macro code.
-
-It's also quite annoying and unhelpful to get this result when we're looking for the definition of a method when it has been generated by a declarative macro:
+It's OK, but it's harder to read than native code, and IDEs can't often provide contextual help or apply refactoring in the macro code. It's also quite annoying and unhelpful to get this result when we're looking for the definition of a method when it has been generated by a declarative macro:
 
 ```rust
 impl_my_log! { u8 u16 u32 u64 u128 }
 ```
 
-Using a **blanket implementation** has other drawbacks:
+Using a **blanket implementation** is very powerful but has other drawbacks:
 - It forbids any other implementation except for types of the same crate that are not already under the blanket implementation, so it only works when the implementation can be written for all bound types, current and future.
 - Finding a trait that corresponds to what we need to write is not always possible. The `num` crate provides a lot of help for primitives, for instance, but not everything is covered.
+- Doing the implementation for a whole range of types isn't always desirable.
 - Even when the operations and constants are covered by traits, it quickly requires a long list of trait bounds.
-
-Writing the first example as a blanket implementation looks like this. Since it's a short example, there is only one bound, but instead of `T::BITS` we had to use a trick that isn't very good-looking:
-
-```rust
-use std::mem;
-use num_traits::PrimInt;
-
-impl<T: PrimInt> MyLog for T {
-    fn my_log2(self) -> u32 {
-        mem::size_of::<T>() as u32 * 8 - 1 - self.leading_zeros()
-    }
-}
-```
-
-## Conditional Code
-
-The use of conditional inclusion of code offers more flexibility in the implementation. Within a trait-gen implementation, the attribute `#[trait_gen_if(T in Type1, Type2, Type3]` disables the attached code if `T` isn't in the list of types.
-
-Here is an example:
-
-```rust
-use trait_gen::{trait_gen, trait_gen_if};
-
-trait Binary {
-    const DECIMAL_DIGITS: usize;
-    const SIGN: bool = false;
-    fn display_length() -> usize;
-    fn try_neg(self) -> Option<Self> where Self: Sized { None }
-}
-
-#[trait_gen(T -> i8, u8, i32, u32)]
-impl Binary for T {
-    #[trait_gen_if(T in i8, u8)]
-    const DECIMAL_DIGITS: usize = 3;
-    #[trait_gen_if(T in i32, u32)]
-    const DECIMAL_DIGITS: usize = 10;
-    #[trait_gen_if(T in i8, i32)]
-    const SIGN: bool = true;
-
-    fn display_length() -> usize {
-        Self::DECIMAL_DIGITS + if T::SIGN { 1 } else { 0 }
-    }
-
-    #[trait_gen_if(T in i8, i32)]
-    fn try_neg(self) -> Option<Self> {
-        Some(-self)
-    }
-}
-```
-
-The arguments can be placed on either side of `in`, so you can also use it to compare arguments, as shown below. Note the `!T in U`, which means the code is enabled when `T` is *not* in the given list, so here when `T != U`. 
-
-```rust
-use trait_gen::{trait_gen, trait_gen_if};
-
-trait TypeEq<U> {
-    fn same_type(&self, other: &U) -> bool;
-}
-
-#[trait_gen(T -> u8, u16, u32)]
-#[trait_gen(U -> u8, u16, u32)]
-impl TypeEq<U> for T {
-    #[trait_gen_if(T in U)]
-    fn same_type(&self, _other: &U) -> bool {
-        true
-    }
-    #[trait_gen_if(!T in U)]
-    fn same_type(&self, _other: &U) -> bool {
-        false
-    }
-}
-```
-
-We've seen earlier that `type_gen` was a synonym of `trait_gen`. For the sake of coherency, a
-`type_gen_if` is also provided as a synonym of `trait_gen_if`.
-
-_Thanks to **Daniel Vigovszky** for giving me this idea! He first implemented it, although differently, in a fork called [conditional_trait_gen](https://github.com/vigoo/conditional_trait_gen). I had pondered about some use-cases that would require such a feature in an old post but never got around to implementing it until now._
-
-## Examples
-
-Here are a few examples of the substitutions that are supported; you'll find more in the [integration tests](https://github.com/blueglyph/trait_gen/blob/v1.1.0/tests/integration.rs) of the library. 
-
-The first example is more an illustration of what is and isn't replaced than a practical implementation:
-
-```rust
-#[trait_gen(U -> u32, i32, u64, i64)]
-impl AddMod for U {
-    fn add_mod(self, other: U, m: U) -> U {
-        const U: U = 0;
-        let zero = U::default();
-        let offset: super::U = super::U(0);
-        (self + other + U + zero + offset.0 as U) % m
-    }
-}
-```
-
-is expanded into (we only show the first type, `u32`):
-  
--   ```rust
-    impl AddMod for u32 {
-        fn add_mod(self, other: u32, m: u32) -> u32 {
-            const U: u32 = 0;
-            let zero = u32::default();
-            let offset: super::U = super::U(0);
-            (self + other + U + zero + offset.0 as u32) % m
-        }
-    }
-    // ...
-    ```
-
-This example shows the use of type arguments in generic traits:
-
-```rust
-struct Meter<U>(U);
-struct Foot<U>(U);
-
-trait GetLength<T> {
-    fn length(&self) -> T;
-}
-
-#[trait_gen(U -> f32, f64)]
-impl GetLength<U> for Meter<U> {
-    fn length(&self) -> U {
-        self.0 as U
-    }
-}
-```
-
-This attribute can be combined with another one to create a _generic composition_, implementing the trait for `Meter<f32>`, `Meter<f64>`, `Foot<f32>`, `Foot<f64>`:
-
-```rust
-#[trait_gen(T -> Meter, Foot)]
-#[trait_gen(U -> f32, f64)]
-impl GetLength<U> for T<U> {
-    fn length(&self) -> U {
-        self.0 as U
-    }
-}
-```
-
-is expanded into this:
-
--   ```rust
-    impl GetLength<f32> for Meter<f32> {
-        fn length(&self) -> f32 { self.0 as f32 }
-    }
-    impl GetLength<f64> for Meter<f64> {
-        fn length(&self) -> f64 { self.0 as f64 }
-    }
-    impl GetLength<f32> for Foot<f32> {
-        fn length(&self) -> f32 { self.0 as f32 }
-    }
-    impl GetLength<f64> for Foot<f64> {
-        fn length(&self) -> f64 { self.0 as f64 }
-    }
-    ```
-
-Multisegment paths (paths with `::`) and path arguments (`<f32>`) can be used in the arguments. For example, `gen::U` is used to avoid any confusion with types if many single-letter types have already been defined.
-
-Also, `Meter` and `Foot` **must** keep the `units` module path in the arguments because there wouldn't be a substitution if those paths were in the code (the type in `impl Add for units::gen::U` doesn't begin with `gen::U` and thus isn't replaced).
-
-_Note: `gen` needn't any declaration since it's replaced by the macro._
-
-```rust
-#[trait_gen(gen::U -> units::Meter<f32>, units::Foot<f32>)]
-impl Add for gen::U {
-    type Output = gen::U;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        gen::U(self.0 + rhs.0)
-    }
-}
-```
-
-More complicated types can be used, like references or slices. This example generates implementations for the immutable, mutable and boxed referenced types:
-
-```rust
-#[trait_gen(T -> u8, u16, u32, u64, u128)]
-impl MyLog for T {
-    fn my_log2(self) -> u32 {
-        T::BITS - 1 - self.leading_zeros()
-    }
-}
-
-#[trait_gen(T -> u8, u16, u32, u64, u128)]
-#[trait_gen(U -> &T, &mut T, Box<T>)]
-impl MyLog for U {
-    fn my_log2(self) -> u32 {
-        MyLog::my_log2(*self)
-    }
-}
-```
-
-As you see in the generic composition, the first generic argument `U` can be used in the second attribute argument list (the order of the attributes doesn't matter).
-
-Finally, this example shows how the documentation and string literals can be customized in each implementation by using the `${T}` format:
-
-```rust
-trait Repr {
-    fn text(&self) -> String;
-}
-
-#[trait_gen(T -> u32, i32, u64, i64)]
-impl Repr for T {
-    /// Produces a string representation for `${T}`
-    fn text(&self) -> String {
-        call("${T}");
-        format!("${T}: {}", self)
-    }
-}
-
-assert_eq!(1_u32.text(), "u32: 1");
-assert_eq!(2_u64.text(), "u64: 2");
-```
-
--   ```rust
-    impl Repr for u32 {
-        /// Produces a string representation for `u32`
-        fn text(&self) -> String {
-            call("u32");
-            format!("u32: {}", self)
-        }
-    }
-    // ...
-    ```
-
-_Note: there is no escape code to avoid the substitution; if you need `${T}` for another purpose and you don't want it to be replaced, you must use `concat!` in a doc attribute to split the pattern; for example `#[doc = concat!("my ${", "T} variable")]`. Or you must choose another generic argument; for example, `U` or `my::T`._ 
-
-## IDE Code Awareness
-
-_rust-analyzer_ supports procedural macros for code awareness, so everything should be fine for editors based on this Language Server Protocol implementation.
-
-IDEs like RustRover and IntelliJ/CLion with the Rust plugin all "understand" procedural macros. The expansion is shown with "Show macro recursive expansion", among other actions, errors are correctly shown, all the code-awareness features seem to work as expected, and the code disabled by the conditional attribute appears in grey.
-
-## Limitations
-
-* The procedural macro of the `trait_gen` attribute can't handle scopes, so it doesn't support any type declaration with the same literal as the generic argument. For instance, this code fails to compile because of the generic function:
-
-  ```rust
-  use num::Num;
-  use trait_gen::trait_gen;
-  
-  trait AddMod {
-      type Output;
-      fn add_mod(self, rhs: Self, modulo: Self) -> Self::Output;
-  }
-  
-  #[trait_gen(T -> u64, i64, u32, i32)]
-  impl AddMod for T {
-      type Output = T;
-  
-      fn add_mod(self, rhs: Self, modulo: Self) -> Self::Output {
-          fn int_mod<T: Num> (a: T, m: T) -> T { // <== ERROR, conflicting 'T'
-              a % m
-          }
-          int_mod(self + rhs, modulo)
-      }
-  }
-  ```
-
-* The generic argument must be a [type path](https://doc.rust-lang.org/reference/paths.html#paths-in-types); it cannot be a more complex type like a reference or a slice. So you can use `gen::T<U> -> ...` but not `&T -> ...`.
 
 # Compatibility
 
-The `trait-gen` crate is tested for rustc **1.61.0** and newer on Windows 64-bit and Linux 64/32-bit platforms.
+The `trait-gen` crate is tested for rustc **1.61.0** and stable on Windows 64-bit and Linux 64/32-bit platforms.
 
 # Releases
 
-[RELEASES.md](RELEASES.md) keeps a log of all the releases.
+[RELEASES.md](RELEASES.md) keeps a log of all the releases (most are on the [GitHub release page](https://github.com/blueglyph/trait_gen/releases), too). 
 
-# License
+# Licence
 
 This code is licensed under either [MIT License](https://choosealicense.com/licenses/mit/) or [Apache License 2.0](https://choosealicense.com/licenses/apache-2.0/), at your option.
