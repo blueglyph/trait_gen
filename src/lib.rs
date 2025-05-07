@@ -403,8 +403,8 @@ impl Debug for ArgType {
         match self {
             ArgType::None => write!(f, "None"),
             ArgType::Cond(c) => write!(f, "Cond({})", pathname(c)),
-            ArgType::Tuple(a) => write!(f, "Tuples({})", a.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")),
-            ArgType::Permutation(p1, p2) => write!(f, "Permutations({}, {})", pathname(p1), pathname(p2)),
+            ArgType::Tuple(a) => write!(f, "Tuple({})", a.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")),
+            ArgType::Permutation(p1, p2) => write!(f, "Permutation({}, {})", pathname(p1), pathname(p2)),
             ArgType::StrictOrder(p1, p2) => write!(f, "StrictOrder({}, {})", pathname(p1), pathname(p2)),
             ArgType::NonStrictOrder(p1, p2) => write!(f, "NonStrictOrder({}, {})", pathname(p1), pathname(p2)),
         }
