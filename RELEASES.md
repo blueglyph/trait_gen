@@ -36,17 +36,17 @@
     ```
 
   - `#[trait_gen(T <= U -> u8, u16, u32)]` generates the code for (T, U) = (u8, u8), (u8, u16), (u8, u32), (u16, u16), (u16, u32), (u32, u32)
-  ```rust
-  // We only want to add integers with fewer bits or of the same type: 
-  #[trait_gen(T <= U -> u8, u16, u32)]
-  impl Add<Wrapper<T>> for Wrapper<U> {
-      type Output = Wrapper<U>;
-  
-      fn add(self, rhs: Wrapper<T>) -> Self::Output {
-          Wrapper::<U>(self.0 + <U>::from(rhs.0))
-      }
-  }
-  ```
+    ```rust
+    // We only want to add integers with fewer bits or of the same type: 
+    #[trait_gen(T <= U -> u8, u16, u32)]
+    impl Add<Wrapper<T>> for Wrapper<U> {
+        type Output = Wrapper<U>;
+    
+        fn add(self, rhs: Wrapper<T>) -> Self::Output {
+            Wrapper::<U>(self.0 + <U>::from(rhs.0))
+        }
+    }
+    ```
 - remove the `in` format, which is now strictly reserved to conditionals
 - remove the legacy format
 - the generic argument must now have the turbofish format if `<..>` is required. Use `#[trait_gen(T::<U> -> ...)` and not `#[trait_gen(T<U> -> ...)`.
