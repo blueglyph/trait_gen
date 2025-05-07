@@ -43,7 +43,7 @@
 //! are preferred._
 //! - _If a `<..>` is required in the generic argument, the
 //! [turbofish syntax](https://doc.rust-lang.org/reference/paths.html#r-paths.expr.turbofish) must be used.
-//! For example, use `T::<U>` and not `T<U>`._
+//! For example, use `#[trait_gen(T::<U> -> ...)` and not `#[trait_gen(T<U> -> ...)`._
 //! - _`type_gen` is a synonym attribute that can be used instead of `trait_gen`. This can be disabled with
 //! the `no_type_gen` feature, in case it conflicts with another 3rd-party attribute._
 //! - _There is no escape code to avoid the substitution in string literals; if you need `${T}` for another
@@ -86,7 +86,7 @@
 //!
 //! ## Compositions
 //! `trait_gen` also replaces the content of inner attributes, so it's possible to chain them
-//! and extend the above example to references and smart pointers:
+//! and extend the above example to references and smart pointers for all the `T` types:
 //!
 //! ```rust
 //! # use trait_gen::trait_gen;
@@ -139,9 +139,9 @@
 //! }
 //! ```
 //!
-//! which will give us all the conversions from/to `u8`, `u16`, and `u32`, except from the
-//! same type since they're already covered by the blanket implementation in the standard library.
-//! It's also very useful for selecting constants or removing methods depending on the
+//! That will give us all the conversions from/to `u8`, `u16`, and `u32`, except from the
+//! same type since they're already covered by a blanket implementation in the standard library.
+//! `trait_gen_if` is also very useful for selecting constants or removing methods depending on the
 //! implementated type.
 //!
 //! _Notes:_

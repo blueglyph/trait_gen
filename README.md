@@ -8,7 +8,7 @@
 <!-- TOC -->
 * [The 'trait-gen' Crate](#the-trait-gen-crate)
   * [Compositions](#compositions)
-  * [Tuples and Conditional Code](#tuples-and-conditional-code)
+  * [Tuples, Permutations, and Conditional Generation](#tuples-permutations-and-conditional-generation)
   * [Other features](#other-features)
 * [Motivation](#motivation)
 * [Compatibility](#compatibility)
@@ -38,8 +38,7 @@ impl MyLog for T {
 ```
 
 ## Compositions
-`trait_gen` also replaces the content of inner attributes, so it's possible to chain them
-and extend the above example to references and smart pointers:
+`trait_gen` also replaces the content of inner attributes, so it's possible to chain them and extend the above example to references and smart pointers for all the `T` types:
 
 ```rust
 #[trait_gen(T -> u8, u16, u32, u64, u128)]
@@ -84,9 +83,7 @@ impl From<Wrapper<U>> for Wrapper<T> {
 }
 ```
 
-which will give us all the conversions from/to `u8`, `u16`, and `u32`, except from the
-same type since they're already covered by the blanket implementation in the standard library.
-It's also very useful for selecting constants or removing methods depending on the implementated type.
+That will give us all the conversions from/to `u8`, `u16`, and `u32`, except from the same type since they're already covered by a blanket implementation in the standard library. `trait_gen_if` is also very useful for selecting constants or removing methods depending on the implementated type.
 
 Note: _Thanks to **Daniel Vigovszky** for giving me the idea of conditional generation! He first implemented it, although quite differently, in a fork called [conditional_trait_gen](https://github.com/vigoo/conditional_trait_gen). I had pondered about some use-cases that would require such a feature in an old post but never got around to implementing it until version 1.1.0._
 
