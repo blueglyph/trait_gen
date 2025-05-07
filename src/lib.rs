@@ -826,7 +826,7 @@ impl VisitMut for Subst {
                     SubstType::Type(ty) => {
                         if VERBOSE { println!(" -> Path '{}' cannot be substituted by type '{}'", path_name, pathname(ty)); }
                         // note: emit-warning is unstable...
-                        // abort!(ty.span(), "Path '{}' cannot be substituted by type '{}'", path_name, pathname(ty));
+                        abort!(ty.span(), "Path '{}' cannot be substituted by type '{}'", path_name, pathname(ty));
                     }
                 }
             } else {
@@ -846,9 +846,13 @@ impl VisitMut for Subst {
                     let path_name = pathname(path);
                     let path_length = path.segments.len();
                     if let Some(length) = path_prefix_len(&self.generic_arg, path) {
-                        if length < path_length || self.can_subst_path() {
-                            // TODO: find a case where length < path_length
-                            if VERBOSE { print!("[type] type path: {} length = {length}, path length = {path_length} {} -> ", path_name, if self.can_subst_path() { ", can_subst" } else { "" }); }
+                        if /*length < path_length ||*/ self.can_subst_path() {
+                            assert!(length == path_length, "length={length}, path_length={path_length}");
+                            // must implement length < path_length if such a case can be found, but it's been elusive
+                            if VERBOSE {
+                                print!("[type] type path: {} length = {length}, path length = {path_length} {} -> ",
+                                       path_name, if self.can_subst_path() { ", can_subst" } else { "" });
+                            }
                             *node = if let SubstType::Type(ty) = self.types.first().unwrap() {
                                 if VERBOSE { println!("{}", pathname(ty)); }
                                 ty.clone()

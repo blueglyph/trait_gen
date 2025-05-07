@@ -727,6 +727,33 @@ mod path_case_06 {
     }
 }
 
+mod path_case_07 {
+    use trait_gen::trait_gen;
+
+    #[derive(PartialEq, Debug)]
+    struct Wrapper<T>(T);
+
+    trait Convert {
+        fn get(self) -> Wrapper<u64>;
+    }
+
+    #[trait_gen(T -> u16, u32)]
+    #[trait_gen(U -> Wrapper)]
+    impl Convert for U<T> {
+        fn get(self) -> U<u64> {
+            let result: Option<U<u64>>;
+            result = Some(U::<u64>(self.0 as u64));
+            result.unwrap()
+        }
+    }
+
+    #[test]
+    fn test() {
+        assert_eq!(Wrapper(12_u16).get(), Wrapper(12_u64));
+        assert_eq!(Wrapper(15_u32).get(), Wrapper(15_u64));
+    }
+}
+
 mod turbofish {
     use trait_gen::trait_gen;
     
