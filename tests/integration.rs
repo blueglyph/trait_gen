@@ -138,7 +138,7 @@ mod advanced_format_permutation {
     }
 }
 
-/// Tests the `#[trait_gen(T !< U -> u8, u16, u32)]` format
+/// Tests the `#[trait_gen(T < U -> u8, u16, u32)]` format
 mod advanced_format_strict_order {
     use trait_gen::trait_gen;
 
@@ -146,7 +146,7 @@ mod advanced_format_strict_order {
     struct Wrapper<T>(T);
 
     // The type must be different to avoid the error "conflicting implementation in crate `core`: impl<T> From<T> for T"
-    #[trait_gen(T !< U -> u8, u16, u32)]
+    #[trait_gen(T < U -> u8, u16, u32)]
     impl From<Wrapper<T>> for Wrapper<U> {
         /// converts ${T} to ${U}
         fn from(value: Wrapper<T>) -> Self {
@@ -165,7 +165,7 @@ mod advanced_format_strict_order {
     }
 }
 
-/// Tests the `#[trait_gen(T =< U -> u8, u16, u32)]` format
+/// Tests the `#[trait_gen(T <= U -> u8, u16, u32)]` format
 mod advanced_format_non_strict_order {
     use std::ops::Add;
     use trait_gen::trait_gen;
@@ -173,7 +173,7 @@ mod advanced_format_non_strict_order {
     #[derive(PartialEq, Debug)]
     struct Wrapper<T>(T);
 
-    #[trait_gen(T =< U -> u8, u16, u32)]
+    #[trait_gen(T <= U -> u8, u16, u32)]
     impl Add<Wrapper<T>> for Wrapper<U> {
         type Output = Wrapper<U>;
 
@@ -724,6 +724,32 @@ mod path_case_06 {
     fn test() {
         assert_eq!(Name("Bob").show(), "Bob");
         assert_eq!(Value(&10.0).show(), "10");
+    }
+}
+
+mod turbofish {
+    use trait_gen::trait_gen;
+    
+    struct Wrapper<T>(T);
+    
+    trait Data {
+        type Inner;
+        fn get(&self) -> Self::Inner; 
+    }
+    
+    #[trait_gen(T -> u8, u16)]
+    #[trait_gen(U::<X> -> Wrapper<T>)]
+    impl Data for U::<X> {
+        type Inner = T;
+        fn get(&self) -> Self::Inner {
+            self.0
+        }
+    }
+    
+    #[test]
+    fn test() {
+        assert_eq!(Wrapper::<u8>(1).get(), 1_u8);
+        assert_eq!(Wrapper(10_u16).get(), 10_u16);
     }
 }
 

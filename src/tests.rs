@@ -96,7 +96,7 @@ fn parse_args() {
         ("my::U -> my::T<u32>",         "my::U",        true,   false),
         ("T -> Box<X>",                 "T",            true,   false),
         ("T -> Box<X>, &X, &mut X",     "T",            false,  false),
-        ("T::U<V::W> -> X, Y",          "T::U<V::W>",   true,   false),
+        ("T::U::<V::W> -> X, Y",        "T::U::<V::W>", true,   false),
         ("T ->",                        "",             true,   true),
         ("[&T] -> [&mut T]",            "",             false,  true),
     ];
@@ -240,11 +240,11 @@ mod test_parse_parameters {
     fn test1() {
         const VERBOSE: bool = false;
         let tests = vec![
-            (false, "T -> u8, u16",           Some("ArgsResult { args: Tuples(T), types: [u8, u16], is_negated: false }")),
-            (false, "T, U -> u8, u16, u32",   Some("ArgsResult { args: Tuples(T, U), types: [u8, u16, u32], is_negated: false }")),
-            (false, "T != U -> u8, u16, u32", Some("ArgsResult { args: Permutations(T, U), types: [u8, u16, u32], is_negated: false }")),
-            (false, "T !< U -> u8, u16, u32", Some("ArgsResult { args: StrictOrder(T, U), types: [u8, u16, u32], is_negated: false }")),
-            (false, "T =< U -> u8, u16, u32", Some("ArgsResult { args: NonStrictOrder(T, U), types: [u8, u16, u32], is_negated: false }")),
+            (false, "T -> u8, u16",           Some("ArgsResult { args: Tuple(T), types: [u8, u16], is_negated: false }")),
+            (false, "T, U -> u8, u16, u32",   Some("ArgsResult { args: Tuple(T, U), types: [u8, u16, u32], is_negated: false }")),
+            (false, "T != U -> u8, u16, u32", Some("ArgsResult { args: Permutation(T, U), types: [u8, u16, u32], is_negated: false }")),
+            (false, "T < U -> u8, u16, u32",  Some("ArgsResult { args: StrictOrder(T, U), types: [u8, u16, u32], is_negated: false }")),
+            (false, "T <= U -> u8, u16, u32", Some("ArgsResult { args: NonStrictOrder(T, U), types: [u8, u16, u32], is_negated: false }")),
             (true, "T in u8, u16",            Some("ArgsResult { args: Cond(T), types: [u8, u16], is_negated: false }")),
         ];
         for (is_cond, string, expected) in tests {

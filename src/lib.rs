@@ -41,6 +41,9 @@
 //! - _Using the letter "T" is not mandatory; any type path will do. For example, `g::Type` is fine
 //! too. But to make it easy to read and similar to a generic implementation, short upper-case identifiers
 //! are preferred._
+//! - _If a `<..>` is required in the generic argument, the
+//! [turbofish syntax](https://doc.rust-lang.org/reference/paths.html#r-paths.expr.turbofish) must be used.
+//! For example, use `T::<U>` and not `T<U>`._
 //! - _`type_gen` is a synonym attribute that can be used instead of `trait_gen`. This can be disabled with
 //! the `no_type_gen` feature, in case it conflicts with another 3rd-party attribute._
 //! - _More complex formats with several arguments and conditions are shown in later examples._
@@ -177,7 +180,7 @@
 //! # #[derive(Clone, PartialEq, Debug)]
 //! # struct Wrapper<T>(T);
 //! #
-//! #[trait_gen(T !< U -> u8, u16, u32)]
+//! #[trait_gen(T < U -> u8, u16, u32)]
 //! impl From<Wrapper<T>> for Wrapper<U> {
 //!     /// converts Wrapper<${T}> to Wrapper<${U}>
 //!     fn from(value: Wrapper<T>) -> Self {
@@ -199,7 +202,7 @@
 //! # #[derive(Clone, PartialEq, Debug)]
 //! # struct Wrapper<T>(T);
 //! #
-//! #[trait_gen(T =< U -> u8, u16, u32)]
+//! #[trait_gen(T <= U -> u8, u16, u32)]
 //! impl Add<Wrapper<T>> for Wrapper<U> {
 //!     type Output = Wrapper<U>;
 //!
@@ -210,10 +213,7 @@
 //! ```
 //!
 //! _Notes:_
-//! - _`!=`, `!<`, and `=<` are limited to two generic arguments._
-//! - _`<` and `<=` would have been more intuitive symbols than `!<` and `=<`, but the arguments
-//! being types, it's hard for the compiler to tell, in `T < U`, if `T < U` is the beginning of a
-//! type `T<U>` or a type `T` followed by the comparison symbol `<` (spaces don't count)._
+//! - _`!=`, `<`, and `<=` are limited to two generic arguments._
 //!
 //! That covers all the forms of these attributes. For more examples, look at the crate's 
 //! [integration tests](https://github.com/blueglyph/trait_gen/blob/v2.0.0/tests/integration.rs).
@@ -250,7 +250,7 @@ use proc_macro::TokenStream;
 use proc_macro2::{Punct, Spacing};
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens, TokenStreamExt};
-use syn::{Generics, GenericParam, Token, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, Error, bracketed, MetaList, token};
+use syn::{Generics, GenericParam, Token, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, Error, bracketed, MetaList, token, ExprPath};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -331,7 +331,7 @@ enum ArgType {
     /// - `#[trait_gen(T, U -> u8, u16, u32)]`
     ///
     ///   (T, U) = (u8, u8), (u8, u16), (u8, u32), (u16, u8), (u16, u16), (u16, u32) , ...
-    Tuples(Vec<Path>),
+    Tuple(Vec<Path>),
     /// Pair of arguments from which all 2-permutations in a list are generated.
     ///
     /// The types in the list are not verified, so if the same type is present multiple times in the list,
@@ -341,7 +341,7 @@ enum ArgType {
     /// - `#[trait_gen(T != U -> u8, u16, u32)]`
     ///
     ///   (T, U) = (u8, u16), (u8, u32), (u16, u8), (u16, u32), (u32, u8), (u32, u16)
-    Permutations(Path, Path),
+    Permutation(Path, Path),
     /// Pair of arguments from which all 2-permutations in a list with strict order are generated.
     /// In other words, the position of the first argument is lower than the position of the second.
     /// A typical use is when you can safely combine integers with fewer bits into an integer with more bits
@@ -375,8 +375,8 @@ impl ToTokens for ArgType {
         match self {
             ArgType::None => {}
             ArgType::Cond(ty) => ty.to_tokens(tokens),
-            ArgType::Tuples(paths) => tokens.append_separated(paths, Punct::new(',', Spacing::Alone)),
-            ArgType::Permutations(path1, path2) => {
+            ArgType::Tuple(paths) => tokens.append_separated(paths, Punct::new(',', Spacing::Alone)),
+            ArgType::Permutation(path1, path2) => {
                 path1.to_tokens(tokens);
                 tokens.append(Punct::new('!', Spacing::Joint));
                 tokens.append(Punct::new('=', Spacing::Alone));
@@ -403,8 +403,8 @@ impl Debug for ArgType {
         match self {
             ArgType::None => write!(f, "None"),
             ArgType::Cond(c) => write!(f, "Cond({})", pathname(c)),
-            ArgType::Tuples(a) => write!(f, "Tuples({})", a.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")),
-            ArgType::Permutations(p1, p2) => write!(f, "Permutations({}, {})", pathname(p1), pathname(p2)),
+            ArgType::Tuple(a) => write!(f, "Tuples({})", a.iter().map(|t| pathname(t)).collect::<Vec<_>>().join(", ")),
+            ArgType::Permutation(p1, p2) => write!(f, "Permutations({}, {})", pathname(p1), pathname(p2)),
             ArgType::StrictOrder(p1, p2) => write!(f, "StrictOrder({}, {})", pathname(p1), pathname(p2)),
             ArgType::NonStrictOrder(p1, p2) => write!(f, "NonStrictOrder({}, {})", pathname(p1), pathname(p2)),
         }
@@ -905,12 +905,16 @@ fn parse_parameters(input: ParseStream, is_conditional: bool)
     let args = if is_conditional {
         ArgType::Cond(input.parse::<Type>()?)
     } else {
-        // determines the format of the left-hand arguments
-        let path1 = input.parse::<Path>()?;
+        // Determines the format of the left-hand arguments.
+        // ExprPath is used instead of Path in order to force a turbofish syntax; this allows the use
+        // of '<' as a separator between arguments: "U < V", or if a generic argument is really required,
+        // "U::<X> < V". Without that, it wouldn't be possible to parse a path followed by a '<' token.
+        let path1 = input.parse::<ExprPath>()?.path;
         if input.peek(Token![,]) && input.parse::<Token![,]>().is_ok() {
+            // Tuple: "W, X, Y -> Type1, Type2"
             let mut list_args = vec![path1];
             loop {
-                let p = input.parse::<Path>()?;
+                let p = input.parse::<ExprPath>()?.path;
                 list_args.push(p);
                 if input.peek(Token![,]) {
                     _ = input.parse::<Token![,]>();
@@ -918,22 +922,21 @@ fn parse_parameters(input: ParseStream, is_conditional: bool)
                     break;
                 }
             }
-            ArgType::Tuples(list_args)
+            ArgType::Tuple(list_args)
         } else if input.peek(Token![!]) && input.parse::<Token![!]>().is_ok() {
+            // Permutation: "W != X -> Type1, Type2"
+            input.parse::<Token![=]>()?;
+            ArgType::Permutation(path1, input.parse::<Path>()?)
+        } else if input.peek(Token![<]) && input.parse::<Token![<]>().is_ok() {
+            // Permutation with strict or non-strict order: "W < X -> Type1, Type2" or "W <= X -> Type1, Type2"
             if input.peek(Token![=]) && input.parse::<Token![=]>().is_ok() {
-            ArgType::Permutations(path1, input.parse::<Path>()?)
+                ArgType::NonStrictOrder(path1, input.parse::<Path>()?)
             } else {
-                input.parse::<Token![<]>()?;
                 ArgType::StrictOrder(path1, input.parse::<Path>()?)
             }
         } else {
-            if input.peek(Token![=]) && input.parse::<Token![=]>().is_ok() {
-                input.parse::<Token![<]>()?;
-                ArgType::NonStrictOrder(path1, input.parse::<Path>()?)
-            } else {
             // that something else must be '->', so we return a single "normal" argument
-            ArgType::Tuples(vec![path1])
-            }
+            ArgType::Tuple(vec![path1])
         }
     };
 
@@ -1086,7 +1089,7 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut output = TokenStream::new();
     let args = std::mem::take(&mut attribute.args);
     match &args {
-        ArgType::Tuples(paths) => {
+        ArgType::Tuple(paths) => {
             // generates all the permutations
             let mut subst = Subst::from_trait_gen(attribute.clone(), paths[0].clone());
             let types = std::mem::take(&mut subst.types);
@@ -1119,7 +1122,7 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
                 if values.is_empty() { break }
             }
         }
-        ArgType::Permutations(path1, path2) | ArgType::StrictOrder(path1, path2) | ArgType::NonStrictOrder(path1, path2) => {
+        ArgType::Permutation(path1, path2) | ArgType::StrictOrder(path1, path2) | ArgType::NonStrictOrder(path1, path2) => {
             // we could translate the attribute into simple attributes using conditionals, but it's
             // easier, lighter, and safer to simply generate and filter the combinations
             let (_, types) = to_subst_types(attribute.types.clone());
@@ -1127,7 +1130,7 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
             for (i1, p1) in types.iter().enumerate() {
                 for (i2, p2) in types.iter().enumerate() {
                     let cond = match &args {
-                        ArgType::Permutations(_, _) => i1 != i2,
+                        ArgType::Permutation(_, _) => i1 != i2,
                         ArgType::StrictOrder(_, _) => i1 < i2,
                         ArgType::NonStrictOrder(_, _) => i1 <= i2,
                         _ => panic!("can't happen")
