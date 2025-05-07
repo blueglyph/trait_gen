@@ -309,10 +309,10 @@ impl Debug for SubstType {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 /// Variants of attribute left-hand-side arguments.
 enum ArgType {
-    #[default] None,
+    None,
     /// Conditional argument. Must be a general `Type` because it's interchangeable with the right-hand side
     /// types. When this attribute is processed by `#[trait_gen]`, it's replaced by a type.
     ///
@@ -1091,7 +1091,7 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
             help = "The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]"),
     };
     let mut output = TokenStream::new();
-    let args = std::mem::take(&mut attribute.args);
+    let args = std::mem::replace(&mut attribute.args, ArgType::None);
     match &args {
         ArgType::Tuple(paths) => {
             // generates all the permutations
