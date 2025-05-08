@@ -28,7 +28,7 @@ fn annotate_error(text: &str, msg: &str, span: Span) -> String {
 }
 
 fn try_parse<T: Parse>(args: TokenStream, text: &str) -> Result<T, String> {
-    match parse2::<T>(args.clone()) {
+    match syn::parse2::<T>(args.clone()) {
         Ok(subst) => Ok(subst),
         Err(err) => {
             let msg = annotate_error(text, &err.to_string(), err.span());

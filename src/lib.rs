@@ -251,8 +251,7 @@ mod tests;
 
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
-use proc_macro::TokenStream;
-use proc_macro2::{Punct, Spacing};
+use proc_macro2::{Punct, Spacing, TokenStream};
 use proc_macro_error::{proc_macro_error, abort};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::{Generics, GenericParam, Token, File, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, GenericArgument, Type, Error, bracketed, MetaList, token, ExprPath};
@@ -261,8 +260,6 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::PathSep;
 use syn::visit_mut::VisitMut;
-#[allow(unused_imports)]
-use syn::parse2; // wrongly detected as unused
 
 // For verbose debugging
 const VERBOSE: bool = false;
@@ -1007,7 +1004,7 @@ fn substitute(item: TokenStream, mut types: Subst) -> TokenStream {
     }
     if VERBOSE || VERBOSE_TF { println!("\n{}\n{}", item, "-".repeat(80)); }
     let mut output = TokenStream::new();
-    let ast: File = syn::parse(item).unwrap();
+    let ast: File = syn::parse2(item).unwrap();
     while !types.types.is_empty() {
         let mut modified_ast = ast.clone();
         types.visit_file_mut(&mut modified_ast);
@@ -1017,6 +1014,78 @@ fn substitute(item: TokenStream, mut types: Subst) -> TokenStream {
         types.types.remove(0);
     }
     if VERBOSE { println!("end trait_gen for {}\n{}", pathname(&types.generic_arg), "-".repeat(80)); }
+    output
+}
+
+fn process_trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
+    let mut attribute = match syn::parse2::<TraitGen>(args) {
+        Ok(types) => types,
+        Err(err) => abort!(err.span(), err;
+            help = "The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]"),
+    };
+    let mut output = TokenStream::new();
+    let args = std::mem::replace(&mut attribute.args, ArgType::None);
+    match &args {
+        ArgType::Tuple(paths) => {
+            // generates all the permutations
+            let mut subst = Subst::from_trait_gen(attribute.clone(), paths[0].clone());
+            let types = std::mem::take(&mut subst.types);
+            let new_iterators = (0..paths.len()).map(|_| types.iter()).collect::<Vec<_>>();
+            let mut values = vec![];
+            let mut iterators = vec![];
+            loop {
+                // fill missing iterators with fresh ones:
+                for mut new_iter in new_iterators.iter().skip(iterators.len()).cloned() {
+                    values.push(new_iter.next().unwrap());
+                    iterators.push(new_iter);
+                }
+                // do the substitutions:
+                let mut stream = item.clone();
+                for (arg, &ty) in paths.iter().zip(values.iter()) {
+                    subst.generic_arg = arg.clone();
+                    subst.types = vec![ty.clone()];
+                    stream = substitute(stream, subst.clone());
+                }
+                output.extend(stream);
+                // pops dead iterators and increases the next one:
+                while let Some(mut it) = iterators.pop() {
+                    values.pop();
+                    if let Some(v) = it.next() {
+                        values.push(v);
+                        iterators.push(it);
+                        break;
+                    }
+                }
+                if values.is_empty() { break }
+            }
+        }
+        ArgType::Permutation(path1, path2) | ArgType::StrictOrder(path1, path2) | ArgType::NonStrictOrder(path1, path2) => {
+            // we could translate the attribute into simple attributes using conditionals, but it's
+            // easier, lighter, and safer to simply generate and filter the combinations
+            let (_, types) = to_subst_types(attribute.types.clone());
+            let mut subst = Subst::from_trait_gen(attribute.clone(), path1.clone());
+            for (i1, p1) in types.iter().enumerate() {
+                for (i2, p2) in types.iter().enumerate() {
+                    let cond = match &args {
+                        ArgType::Permutation(_, _) => i1 != i2,
+                        ArgType::StrictOrder(_, _) => i1 < i2,
+                        ArgType::NonStrictOrder(_, _) => i1 <= i2,
+                        _ => panic!("can't happen")
+                    };
+                    if cond {
+                        subst.types = vec![p1.clone()];
+                        subst.generic_arg = path1.clone();
+                        let stream = substitute(item.clone(), subst.clone());
+                        subst.types = vec![p2.clone()];
+                        subst.generic_arg = path2.clone();
+                        output.extend(substitute(stream, subst.clone()));
+                    }
+                }
+            }
+        }
+        _ => panic!("can't happen"),
+    }
+    if VERBOSE { println!("{}\n{}", output, "=".repeat(80)); }
     output
 }
 
@@ -1088,76 +1157,8 @@ fn substitute(item: TokenStream, mut types: Subst) -> TokenStream {
 /// ```
 #[proc_macro_attribute]
 #[proc_macro_error]
-pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
-    let mut attribute = match syn::parse::<TraitGen>(args) {
-        Ok(types) => types,
-        Err(err) => abort!(err.span(), err;
-            help = "The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]"),
-    };
-    let mut output = TokenStream::new();
-    let args = std::mem::replace(&mut attribute.args, ArgType::None);
-    match &args {
-        ArgType::Tuple(paths) => {
-            // generates all the permutations
-            let mut subst = Subst::from_trait_gen(attribute.clone(), paths[0].clone());
-            let types = std::mem::take(&mut subst.types);
-            let new_iterators = (0..paths.len()).map(|_| types.iter()).collect::<Vec<_>>();
-            let mut values = vec![];
-            let mut iterators = vec![];
-            loop {
-                // fill missing iterators with fresh ones:
-                for mut new_iter in new_iterators.iter().skip(iterators.len()).cloned() {
-                    values.push(new_iter.next().unwrap());
-                    iterators.push(new_iter);
-                }
-                // do the substitutions:
-                let mut stream = item.clone();
-                for (arg, &ty) in paths.iter().zip(values.iter()) {
-                    subst.generic_arg = arg.clone();
-                    subst.types = vec![ty.clone()];
-                    stream = substitute(stream, subst.clone());
-                }
-                output.extend(stream);
-                // pops dead iterators and increases the next one:
-                while let Some(mut it) = iterators.pop() {
-                    values.pop();
-                    if let Some(v) = it.next() {
-                        values.push(v);
-                        iterators.push(it);
-                        break;
-                    }
-                }
-                if values.is_empty() { break }
-            }
-        }
-        ArgType::Permutation(path1, path2) | ArgType::StrictOrder(path1, path2) | ArgType::NonStrictOrder(path1, path2) => {
-            // we could translate the attribute into simple attributes using conditionals, but it's
-            // easier, lighter, and safer to simply generate and filter the combinations
-            let (_, types) = to_subst_types(attribute.types.clone());
-            let mut subst = Subst::from_trait_gen(attribute.clone(), path1.clone());
-            for (i1, p1) in types.iter().enumerate() {
-                for (i2, p2) in types.iter().enumerate() {
-                    let cond = match &args {
-                        ArgType::Permutation(_, _) => i1 != i2,
-                        ArgType::StrictOrder(_, _) => i1 < i2,
-                        ArgType::NonStrictOrder(_, _) => i1 <= i2,
-                        _ => panic!("can't happen")
-                    };
-                    if cond {
-                        subst.types = vec![p1.clone()];
-                        subst.generic_arg = path1.clone();
-                        let stream = substitute(item.clone(), subst.clone());
-                        subst.types = vec![p2.clone()];
-                        subst.generic_arg = path2.clone();
-                        output.extend(substitute(stream, subst.clone()));
-                    }
-                }
-            }
-        }
-        _ => panic!("can't happen"),
-    }
-    if VERBOSE { println!("{}\n{}", output, "=".repeat(80)); }
-    output
+pub fn trait_gen(args: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    process_trait_gen(args.into(), item.into()).into()
 }
 
 #[cfg(not(feature = "no_type_gen"))]
@@ -1167,8 +1168,8 @@ pub fn trait_gen(args: TokenStream, item: TokenStream) -> TokenStream {
 /// be applied to other elements than trait implementations.
 #[proc_macro_attribute]
 #[proc_macro_error]
-pub fn type_gen(args: TokenStream, item: TokenStream) -> TokenStream {
-    trait_gen(args, item)
+pub fn type_gen(args: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    process_trait_gen(args.into(), item.into()).into()
 }
 
 //==============================================================================
@@ -1176,7 +1177,7 @@ pub fn type_gen(args: TokenStream, item: TokenStream) -> TokenStream {
 
 fn process_conditional_attribute(name: &str, args: TokenStream, item: TokenStream) -> TokenStream {
     if VERBOSE { println!("process_conditional_attribute({}, {})", args.to_string(), item.to_string()); }
-    let new_code = match syn::parse::<CondParams>(args) {
+    let new_code = match syn::parse2::<CondParams>(args) {
         Ok(attr) => {
             if attr.types.contains(&attr.generic_arg) ^ attr.is_negated {
                 item                // enables the code
@@ -1198,8 +1199,8 @@ fn process_conditional_attribute(name: &str, args: TokenStream, item: TokenStrea
 /// Please refer to the [crate documentation](crate#conditional-code).
 #[proc_macro_attribute]
 #[proc_macro_error]
-pub fn trait_gen_if(args: TokenStream, item: TokenStream) -> TokenStream {
-    process_conditional_attribute("trait_gen_if", args, item)
+pub fn trait_gen_if(args: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    process_conditional_attribute("trait_gen_if", args.into(), item.into()).into()
 }
 
 #[cfg(not(feature = "no_type_gen"))]
@@ -1211,6 +1212,6 @@ pub fn trait_gen_if(args: TokenStream, item: TokenStream) -> TokenStream {
 /// Please refer to the [crate documentation](crate#conditional-code).
 #[proc_macro_attribute]
 #[proc_macro_error]
-pub fn type_gen_if(args: TokenStream, item: TokenStream) -> TokenStream {
-    process_conditional_attribute("type_gen_if", args, item)
+pub fn type_gen_if(args: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    process_conditional_attribute("type_gen_if", args.into(), item.into()).into()
 }
