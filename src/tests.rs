@@ -5,9 +5,12 @@
 #![cfg(test)]
 
 use std::str::FromStr;
-use crate::*;
 
 use proc_macro2::{Span, TokenStream};
+use syn::parse::Parse;
+use syn::{Path, Type};
+use crate::args::TraitGen;
+use crate::utils::{path_prefix_len, pathname, replace_str};
 
 fn annotate_error(text: &str, msg: &str, span: Span) -> String {
     // only works for single-lined sources:
@@ -197,7 +200,8 @@ mod test_parse_parameters {
     use std::str::FromStr;
     use syn::parse::{Parse, ParseStream};
     use syn::Type;
-    use crate::{parse_parameters, pathname, ArgType};
+    use crate::args::{parse_arguments, ArgType};
+    use crate::utils::pathname;
 
     struct ArgsResult {
         args: ArgType,
@@ -219,7 +223,7 @@ mod test_parse_parameters {
     
     impl Parse for ArgsResult {
         fn parse(input: ParseStream) -> syn::Result<Self> {
-            match parse_parameters(input, false) {
+            match parse_arguments(input, false) {
                 Ok((args, types, is_negated)) => Ok(ArgsResult { args, types, is_negated }),
                 Err(e) => Err(e),
             }
@@ -228,7 +232,7 @@ mod test_parse_parameters {
     
     impl Parse for CondWrapper {
         fn parse(input: ParseStream) -> syn::Result<Self> {
-            match parse_parameters(input, true) {
+            match parse_arguments(input, true) {
                 Ok((args, types, is_negated)) => Ok(CondWrapper(ArgsResult { args, types, is_negated })),
                 Err(e) => Err(e),
             }
