@@ -3,7 +3,7 @@
 // Top-level macro code. Independent of proc_macro.
 
 use proc_macro2::TokenStream;
-use proc_macro_error::abort;
+use proc_macro_error2::abort;
 use quote::quote;
 use syn::File;
 use syn::visit_mut::VisitMut;

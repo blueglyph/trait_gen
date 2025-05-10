@@ -1,3 +1,7 @@
+# 2.0.3 (2025-05-10)
+
+- changed a dependency from `proc-macro-error` to `proc-macro-error2`, in order to avoid compiling `syn` v1.
+
 # 2.0.2 (2025-05-10)
 
 - refactor code and split files
