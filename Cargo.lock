@@ -67,7 +67,7 @@ dependencies = [
 
 [[package]]
 name = "trait-gen"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",

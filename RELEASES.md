@@ -1,3 +1,7 @@
+# 2.0.2 (2025-05-10)
+
+- refactor code and split files
+
 # 2.0.1 (2025-05-07)
 
 - fix a few lint issues
