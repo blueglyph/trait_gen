@@ -1,4 +1,4 @@
-// Copyright 2023 Redglyph
+// Copyright (c) 2025 Redglyph (@gmail.com). All Rights Reserved.
 //
 // Attribute argument parsing and related objects. Independent of proc_macro.
 
