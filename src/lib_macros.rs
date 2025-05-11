@@ -33,7 +33,7 @@ fn substitute(item: TokenStream, mut types: Subst) -> TokenStream {
     while !types.types.is_empty() {
         let mut modified_ast = ast.clone();
         types.visit_file_mut(&mut modified_ast);
-        output.extend(TokenStream::from(quote!(#modified_ast)));
+        output.extend(quote!(#modified_ast));
         assert!(types.can_subst_path.is_empty(), "self.enabled has {} entries after type {}",
                 types.can_subst_path.len(), pathname(types.types.first().unwrap()));
         types.types.remove(0);
