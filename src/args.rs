@@ -159,7 +159,10 @@ pub(crate) struct CondParams {
 pub(crate) fn parse_arguments(input: ParseStream, is_conditional: bool) -> syn::parse::Result<(ArgType, Vec<Type>, bool)> {
     let is_negated = is_conditional && input.peek(Token![!]) && input.parse::<Token![!]>().is_ok();
     let args = if is_conditional {
-        ArgType::Cond(input.parse::<Type>()?)
+        ArgType::Cond(input.parse::<Type>().map_err(|e|
+            // default message unhelpful (expected one of: `for`, parentheses, `fn`, `unsafe`, ...)
+            Error::new(e.span(), "expected substitution identifier or type")
+        )?)
     } else {
         // Determines the format of the left-hand arguments.
         // ExprPath is used instead of Path in order to force a turbofish syntax; this allows the use
@@ -219,7 +222,7 @@ pub(crate) fn parse_arguments(input: ParseStream, is_conditional: bool) -> syn::
     };
     types = vars.into_iter().collect();
     if types.is_empty() {
-        return Err(Error::new(input.span(), "expected type"));
+        return Err(Error::new(input.span(), format!("expected type after '{}'", if is_conditional { "in" } else { "->" })));
     }
     Ok((args, types, is_negated))
 }

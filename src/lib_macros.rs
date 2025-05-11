@@ -55,6 +55,7 @@ pub(crate) fn macro_trait_gen(args: TokenStream, item: TokenStream) -> TokenStre
             // generates all the permutations
             let mut subst = Subst::from_trait_gen(attribute.clone(), paths[0].clone());
             let types = std::mem::take(&mut subst.types);
+            subst.type_helper = Some(&types);
             let new_iterators = (0..paths.len()).map(|_| types.iter()).collect::<Vec<_>>();
             let mut values = vec![];
             let mut iterators = vec![];

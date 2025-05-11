@@ -106,7 +106,7 @@ impl VisitMut for TurboFish {
 /// Attribute substitution data used to replace the generic argument in `generic_arg` with the
 /// types in `types`. The first item in `types` is the one currently being replaced in the
 /// `VisitMut` implementation.
-pub(crate) struct Subst {
+pub(crate) struct Subst<'a> {
     /// generic argument to replace
     pub generic_arg: Path,
     /// types that replace the generic argument
@@ -115,9 +115,10 @@ pub(crate) struct Subst {
     pub is_path: bool,
     /// Context stack, cannot substitue paths when last is false (can substitute if empty)
     pub can_subst_path: Vec<bool>,
+    pub type_helper: Option<&'a Vec<SubstType>>
 }
 
-impl Subst {
+impl<'a> Subst<'a> {
     pub fn from_trait_gen(attribute: TraitGen, generic_arg: Path) -> Self {
         let (is_path, types) = to_subst_types(attribute.types);
         Subst {
@@ -125,6 +126,7 @@ impl Subst {
             types,
             is_path,
             can_subst_path: vec![],
+            type_helper: None
         }
     }
 
@@ -136,7 +138,7 @@ impl Subst {
     fn get_example_types(&self) -> String {
         // This is called for error messages, which happen only during the first visit_mut pass over
         // the inner attributes: we know that Subst still has all the types in `self.new_types`.
-        let mut examples = self.types.iter().map(pathname).take(3).collect::<Vec<_>>();
+        let mut examples = self.type_helper.unwrap_or(&Vec::new()).iter().map(pathname).take(3).collect::<Vec<_>>();
         while examples.len() < 3 {
             examples.push(format!("Type{}", examples.len() + 1));
         }
@@ -144,13 +146,14 @@ impl Subst {
     }
 }
 
-impl Debug for Subst {
+impl Debug for Subst<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PathTypes {{ generic_arg: {}, types: [{}], is_path: {}, enabled: {} }}",
+        write!(f, "PathTypes {{ generic_arg: {}, types: [{}], is_path: {}, enabled: {}, type_helper: {} }}",
                pathname(&self.generic_arg),
                self.types.iter().map(pathname).collect::<Vec<_>>().join(", "),
                self.is_path,
-               self.can_subst_path.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
+               self.can_subst_path.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "),
+               self.type_helper.unwrap_or(&Vec::new()).iter().map(pathname).collect::<Vec<_>>().join(", "),
         )
     }
 }
@@ -158,7 +161,7 @@ impl Debug for Subst {
 //==============================================================================
 // Main substitution code
 
-impl VisitMut for Subst {
+impl VisitMut for Subst<'_> {
     fn visit_attribute_mut(&mut self, node: &mut Attribute) {
         // Takes the last segment in case there's a specific path to the attribute. This means we don't support other attributes
         // with the same name inside the outer attribute, but it shouldn't be a problem as long as they could be renamed in the `use`
