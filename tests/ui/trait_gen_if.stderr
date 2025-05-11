@@ -1,0 +1,53 @@
+error: expected substitution identifier or type
+
+         = help: The expected format is: #[trait_gen_if(T in u8, u16, u32)]
+
+  --> tests/ui/trait_gen_if.rs:11:21
+   |
+11 |     #[trait_gen_if( in u8)]
+   |                     ^^
+
+error: expected `in`
+
+         = help: The expected format is: #[trait_gen_if(T in u8, u16, u32)]
+
+  --> tests/ui/trait_gen_if.rs:18:22
+   |
+18 |     #[trait_gen_if(U -> u8)]
+   |                      ^
+
+error: expected type after 'in'
+
+         = help: The expected format is: #[trait_gen_if(T in u8, u16, u32)]
+
+  --> tests/ui/trait_gen_if.rs:25:24
+   |
+25 |     #[trait_gen_if(T in)]
+   |                        ^
+
+error: expected `,`
+
+         = help: The expected format is: #[trait_gen_if(T in u8, &u8, u16)]
+
+  --> tests/ui/trait_gen_if.rs:32:28
+   |
+32 |     #[trait_gen_if(T in u8 &u8)]
+   |                            ^
+
+error: expected attribute arguments in parentheses: #[trait_gen_if(...)]
+
+         = help: The expected format is: #[trait_gen_if(T in u8, &u8, u16)]
+
+  --> tests/ui/trait_gen_if.rs:39:7
+   |
+39 |     #[trait_gen_if]
+   |       ^^^^^^^^^^^^
+
+error: expected substitution identifier or type
+
+         = help: The expected format is: #[trait_gen_if(T in u8, &u8, u16)]
+
+  --> tests/ui/trait_gen_if.rs:46:20
+   |
+46 |     #[trait_gen_if()]
+   |                    ^

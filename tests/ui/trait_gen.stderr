@@ -1,0 +1,86 @@
+error: expected identifier
+
+         = help: The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]
+
+ --> tests/ui/trait_gen.rs:6:13
+  |
+6 | #[trait_gen(-> i16, u16)]
+  |             ^
+
+error: expected `->`
+
+         = help: The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]
+
+  --> tests/ui/trait_gen.rs:12:15
+   |
+12 | #[trait_gen(T in i16, u16)]
+   |               ^^
+
+error: expected type after '->'
+
+         = help: The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]
+
+  --> tests/ui/trait_gen.rs:18:1
+   |
+18 | #[trait_gen(T -> )]
+   | ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the attribute macro `trait_gen` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: expected `,`
+
+         = help: The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]
+
+  --> tests/ui/trait_gen.rs:24:22
+   |
+24 | #[trait_gen(T -> i16 u16)]
+   |                      ^^^
+
+error: unexpected end of input, expected identifier
+
+         = help: The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]
+
+  --> tests/ui/trait_gen.rs:30:1
+   |
+30 | #[trait_gen]
+   | ^^^^^^^^^^^^
+   |
+   = note: this error originates in the attribute macro `trait_gen` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: unexpected end of input, expected identifier
+
+         = help: The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]
+
+  --> tests/ui/trait_gen.rs:36:1
+   |
+36 | #[trait_gen()]
+   | ^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the attribute macro `trait_gen` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: expected `->`
+
+         = help: The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]
+
+  --> tests/ui/trait_gen.rs:42:14
+   |
+42 | #[trait_gen(T; U -> u16, u32)]
+   |              ^
+
+error: expected `=`
+
+         = help: The expected format is: #[trait_gen(T -> Type1, Type2, Type3)]
+
+  --> tests/ui/trait_gen.rs:48:16
+   |
+48 | #[trait_gen(T !! U -> u16, u32)]
+   |                ^
+
+error: Type 'T' is reserved for the substitution.
+
+         = help: Use another identifier for this local generic type.
+
+  --> tests/ui/trait_gen.rs:59:20
+   |
+59 |         fn int_mod<T: Num> (a: T, m: T) -> T { // <== ERROR, conflicting 'T'
+   |                    ^^^^^^
