@@ -83,4 +83,4 @@ error: Type 'T' is reserved for the substitution.
   --> tests/ui/trait_gen.rs:59:20
    |
 59 |         fn int_mod<T: Num> (a: T, m: T) -> T { // <== ERROR, conflicting 'T'
-   |                    ^^^^^^
+   |                    ^

@@ -196,7 +196,7 @@ checksum = "fcc842091f2def52017664b53082ecbbeb5c7731092bad69d2c63050401dfd64"
 
 [[package]]
 name = "trait-gen"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "proc-macro-error2",
  "proc-macro2",

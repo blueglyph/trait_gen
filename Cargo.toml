@@ -1,7 +1,7 @@
 [package]
 name = "trait-gen"
 description = "Trait implementation generator macro"
-version = "2.0.5"
+version = "2.0.6"
 edition = "2021"
 rust-version = "1.61.0"
 authors = ["Redglyph"]
