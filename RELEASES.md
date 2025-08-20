@@ -1,3 +1,7 @@
+# 2.0.5 (2025-08-20)
+
+- update dependencies
+
 # 2.0.4 (2025-05-11)
 
 - improve some error messages

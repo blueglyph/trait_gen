@@ -169,6 +169,7 @@ impl VisitMut for Subst<'_> {
         if let Some(PathSegment { ident, .. }) = node.path().segments.last() {
             let ident = ident.to_string();
             match ident.as_str() {
+                #[allow(unreachable_patterns)]
                 // conditional pseudo-attribute (TYPE_GEN_IF == TRAIT_GEN_IF when type_gen is disabled)
                 TRAIT_GEN_IF | TYPE_GEN_IF => {
                     // checks that the syntax is fine and performs the type substitutions if required
@@ -211,6 +212,7 @@ impl VisitMut for Subst<'_> {
                         }
                     };
                 }
+                #[allow(unreachable_patterns)]
                 // embedded trait-gen attributes
                 TRAIT_GEN | TYPE_GEN => {
                     // Perform substitutions in the arguments of the inner attribute if necessary.
