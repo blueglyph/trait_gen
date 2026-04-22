@@ -1,3 +1,7 @@
+# 2.0.7 (2026-04-22)
+
+- update dependencies
+
 # 2.0.6 (2025-08-20)
 
 - update dependencies
