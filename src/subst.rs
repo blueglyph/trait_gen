@@ -5,7 +5,7 @@
 use std::fmt::{Debug, Formatter};
 use proc_macro_error2::abort;
 use quote::{quote, ToTokens};
-use syn::{Generics, GenericParam, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, Type, MetaList};
+use syn::{Generics, GenericParam, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, Type, MetaList, TypeParam};
 use syn::spanned::Spanned;
 use syn::token::PathSep;
 use syn::visit_mut::VisitMut;
@@ -300,9 +300,9 @@ impl VisitMut for Subst<'_> {
             let current_ident = &segment.ident;
             for t in i.params.iter() {
                 match &t {
-                    GenericParam::Type(t) => {
-                        if &t.ident == current_ident {
-                            abort!(t.span(),
+                    GenericParam::Type(TypeParam { ident, .. }) => {
+                        if ident == current_ident {
+                            abort!(ident.span(),
                                 "Type '{}' is reserved for the substitution.", current_ident.to_string();
                                 help = "Use another identifier for this local generic type."
                             );
