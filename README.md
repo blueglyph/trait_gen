@@ -1,3 +1,7 @@
+**IMPORTANT**: This repository has been rehosted elsewhere. Check on crates.io (link below) to see where the latest code is hosted.
+
+---
+
 [![crate](https://img.shields.io/crates/v/trait_gen.svg)](https://crates.io/crates/trait-gen)
 [![documentation](https://docs.rs/trait-gen/badge.svg)](https://docs.rs/trait-gen)
 [![build status](https://github.com/blueglyph/trait_gen/actions/workflows/master.yml/badge.svg)](https://github.com/blueglyph/trait_gen/actions)
