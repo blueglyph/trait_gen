@@ -8,9 +8,9 @@ authors = ["Redglyph"]
 categories = ["rust-patterns"]
 keywords = ["proc-macro", "macro", "trait", "generator"]
 documentation = "https://docs.rs/trait-gen"
-homepage = "https://github.com/blueglyph/trait_gen"
+homepage = "https://codeberg.org/Redglyph/trait_gen"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/blueglyph/trait_gen"
+repository = "https://codeberg.org/Redglyph/trait_gen"
 readme = "README.md"
 exclude = ["tests"]
 
