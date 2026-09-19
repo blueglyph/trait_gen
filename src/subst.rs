@@ -3,7 +3,7 @@
 // Code substitution code. Independent of proc_macro.
 
 use std::fmt::{Debug, Formatter};
-use proc_macro_error2::abort;
+use proc_macro_error3::abort;
 use quote::{quote, ToTokens};
 use syn::{Generics, GenericParam, TypePath, Path, PathArguments, Expr, Lit, LitStr, ExprLit, Macro, parse_str, Attribute, PathSegment, Type, MetaList, TypeParam};
 use syn::spanned::Spanned;

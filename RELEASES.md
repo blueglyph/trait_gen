@@ -1,3 +1,7 @@
+# 2.0.8 (2026-09-19)
+
+- update `syn` lib to 3.0.6, change `proc-macro-error2` (not maintained any more) to `proc-macro-error3` 
+
 # 2.0.7 (2026-04-22)
 
 - update dependencies
